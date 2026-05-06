@@ -14,7 +14,7 @@ type CalendarBlockProps = {
   canResizeStart?: boolean;
   layoutStyle?: CSSProperties;
   visibleStartHour?: number;
-  onSelectBlock: (blockId: string) => void;
+  onSelectBlock: (blockId: string, additive?: boolean) => void;
   onDragStart?: (blockId: string, pointerOffsetY: number) => void;
   onDragEnd?: () => void;
   onResizeStart?: (
@@ -44,6 +44,15 @@ function CalendarBlock({
   const position = getBlockPosition(block, visibleStartHour);
   const isPast = new Date(block.endsAt).getTime() < Date.now();
   const hasRoomForCategory = position.height >= 30;
+  const hasRoomForKindMeta = position.height >= 44;
+  const kindBadge =
+    block.kind === "habit"
+      ? "Habit"
+    : block.kind === "routine"
+      ? "Routine"
+      : block.kind === "task-session"
+        ? "Task"
+        : "Event";
   const style = {
     "--block-accent": colors.accent,
     "--block-background": colors.background,
@@ -85,9 +94,11 @@ function CalendarBlock({
         isDragging ? " dragging" : ""
       }${isCompact ? " compact" : ""}${
         hasRoomForCategory ? "" : " short"
-      }${isPast ? " past" : ""}`}
+      }${isPast ? " past" : ""} outcome-${block.outcome} kind-${block.kind}${
+        block.taskId ? " linked-task" : ""
+      }`}
       draggable={Boolean(onDragStart)}
-      onClick={() => onSelectBlock(block.id)}
+      onClick={(event) => onSelectBlock(block.id, event.shiftKey)}
       onDragEnd={onDragEnd}
       onDragStart={handleDragStart}
       style={style}
@@ -106,6 +117,9 @@ function CalendarBlock({
       </span>
       {hasRoomForCategory ? (
         <span className="block-category">{category?.name ?? "Uncategorized"}</span>
+      ) : null}
+      {kindBadge && hasRoomForKindMeta ? (
+        <span className="block-kind-badge">{kindBadge}</span>
       ) : null}
       {canResizeEnd ? (
         <span

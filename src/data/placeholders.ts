@@ -15,15 +15,8 @@ export const viewPlaceholders: Record<
     title: "Month View",
     eyebrow: "Monthly overview",
     description:
-      "Month cells summarize planned blocks, due tasks, and daily workload at a glance.",
+      "Month cells summarize calendar blocks, due tasks, and daily workload at a glance.",
     cells: ["1", "5", "9", "13", "17", "21", "25", "29"],
-  },
-  year: {
-    title: "Year View",
-    eyebrow: "Long-range map",
-    description:
-      "A compact year overview will help scan seasons, milestones, and trends.",
-    cells: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"],
   },
 };
 
@@ -35,13 +28,19 @@ export const sectionPlaceholders: Record<
     title: "Calendar",
     kicker: "Time planning",
     description:
-      "Switch between week, month, and year views from the toolbar.",
+      "Switch between week and month views from the toolbar.",
   },
   tasks: {
     title: "Tasks",
     kicker: "Work queue",
     description:
       "Project tasks and lightweight planning states will be added later.",
+  },
+  pomodoro: {
+    title: "Focus",
+    kicker: "Pomodoro timer",
+    description:
+      "Run timed focus sessions and save completed work as calendar records.",
   },
   stats: {
     title: "Stats",

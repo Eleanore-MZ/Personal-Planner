@@ -3,16 +3,17 @@ export type Category = {
   name: string;
   color: string;
   description: string;
+  defaultBlockKind: TimeBlockKind;
+  hiddenFromCalendar: boolean;
+  includeInStatsByDefault: boolean;
 };
 
-export type TaskList = {
-  id: string;
-  name: string;
-  description: string;
-  categoryId: string;
-};
-
-export type TaskStatus = "todo" | "in-progress" | "done";
+export type TaskStatus =
+  | "todo"
+  | "in-progress"
+  | "blocked"
+  | "done"
+  | "canceled";
 
 export type TaskPriority = "low" | "medium" | "high";
 
@@ -26,11 +27,9 @@ export type Task = {
   id: string;
   title: string;
   notes: string;
-  listId: string;
   categoryId: string;
   status: TaskStatus;
   priority: TaskPriority;
-  estimatedMinutes: number;
   dueDate?: string;
   plannedTimeBlockId?: string;
   subtasks?: Subtask[];
@@ -38,6 +37,10 @@ export type Task = {
 
 export type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 export type RecurrenceEndMode = "never" | "on" | "after";
+export type LegacyTimeBlockStatus = "planned" | "done" | "skipped" | "canceled";
+export type TimeBlockOutcome = "active" | "abandoned";
+export type TimeBlockKind = "event" | "task-session" | "habit" | "routine";
+export type TimeBlockSource = "manual" | "pomodoro" | "generated" | "imported";
 
 export type TimeBlock = {
   id: string;
@@ -47,6 +50,12 @@ export type TimeBlock = {
   taskId?: string;
   startsAt: string;
   endsAt: string;
+  outcome: TimeBlockOutcome;
+  /** Legacy database compatibility only. UI logic should use outcome. */
+  status?: LegacyTimeBlockStatus;
+  kind: TimeBlockKind;
+  source: TimeBlockSource;
+  isAllDay?: boolean;
   recurrenceFrequency?: RecurrenceFrequency;
   recurrenceInterval?: number;
   recurrenceWeekdays?: number[];

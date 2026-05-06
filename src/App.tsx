@@ -5,8 +5,13 @@ import InspectorPanel from "./components/InspectorPanel";
 import MainPanel from "./components/MainPanel";
 import Sidebar from "./components/Sidebar";
 import TopToolbar from "./components/TopToolbar";
-import type { Category, Task, TaskList, TimeBlock } from "./types/domain";
-import type { AppSettings, CalendarView, NavItemId } from "./types/app";
+import type { Category, Task, TimeBlock } from "./types/domain";
+import type {
+  AppSettings,
+  CalendarView,
+  NavItemId,
+  StatsFilters,
+} from "./types/app";
 import {
   addCalendarDays,
   expandRecurringTimeBlocks,
@@ -43,7 +48,7 @@ const isTypingTarget = (target: EventTarget | null) =>
   target instanceof HTMLTextAreaElement ||
   target instanceof HTMLSelectElement;
 
-const calendarShortcutViews: CalendarView[] = ["week", "month", "year"];
+const calendarShortcutViews: CalendarView[] = ["week", "month"];
 
 type PendingRecurringUpdate = {
   occurrence: TimeBlock;
@@ -66,15 +71,34 @@ function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCalendarCategoryId, setSelectedCalendarCategoryId] =
     useState<string>();
-  const [taskLists, setTaskLists] = useState<TaskList[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>([]);
   const [selectedBlockId, setSelectedBlockId] = useState<string | undefined>();
+  const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     () => new Date(),
   );
+  const [selectedStatsDate, setSelectedStatsDate] = useState(() => new Date());
   const [settings, setSettings] = useState<AppSettings>(() => readSettings());
+  const [showHiddenCalendarCategories, setShowHiddenCalendarCategories] =
+    useState(false);
+  const [statsFilters, setStatsFilters] = useState<StatsFilters>(() => ({
+    analyzeBy: "category",
+    categoryId: "all",
+    blockKind: "all",
+    blockOutcome: "all",
+    blockSource: "all",
+    heatmapMetric: "active_hours",
+    range: "month",
+    selectedDateIso: new Date().toISOString(),
+    timeMode: "active",
+    includeCompletedTasks: true,
+    includeAllDayBlocks: true,
+    includeUncategorized: true,
+    includeStatsExcludedCategories: false,
+    refreshKey: 0,
+  }));
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | undefined>();
@@ -85,13 +109,45 @@ function App() {
     [activeView, currentDate],
   );
   const visibleTimeBlocks = useMemo(() => {
-    const range = getExpansionRange(currentDate);
-    return expandRecurringTimeBlocks(timeBlocks, range.start, range.end);
-  }, [currentDate, timeBlocks]);
+    const statsDate = new Date(statsFilters.selectedDateIso);
+    const range = getExpansionRange(
+      new Date(
+        Math.min(currentDate.getFullYear(), statsDate.getFullYear()),
+        0,
+        1,
+      ),
+    );
+    const endRange = getExpansionRange(
+      new Date(
+        Math.max(currentDate.getFullYear(), statsDate.getFullYear()),
+        11,
+        31,
+      ),
+    );
+    return expandRecurringTimeBlocks(timeBlocks, range.start, endRange.end);
+  }, [currentDate, statsFilters.selectedDateIso, timeBlocks]);
+  const calendarTimeBlocks = useMemo(() => {
+    if (showHiddenCalendarCategories) {
+      return visibleTimeBlocks;
+    }
+
+    const visibleCategoryIds = new Set(
+      categories
+        .filter((category) => !category.hiddenFromCalendar)
+        .map((category) => category.id),
+    );
+    return visibleTimeBlocks.filter((block) =>
+      visibleCategoryIds.has(block.categoryId),
+    );
+  }, [categories, showHiddenCalendarCategories, visibleTimeBlocks]);
 
   useEffect(() => {
     if (categories.length === 0) {
       setSelectedCalendarCategoryId(undefined);
+      setStatsFilters((currentFilters) => ({
+        ...currentFilters,
+        categoryId: "all",
+      }));
       return;
     }
 
@@ -101,7 +157,17 @@ function App() {
     ) {
       setSelectedCalendarCategoryId(categories[0].id);
     }
-  }, [categories, selectedCalendarCategoryId]);
+
+    if (
+      statsFilters.categoryId !== "all" &&
+      !categories.some((category) => category.id === statsFilters.categoryId)
+    ) {
+      setStatsFilters((currentFilters) => ({
+        ...currentFilters,
+        categoryId: "all",
+      }));
+    }
+  }, [categories, selectedCalendarCategoryId, statsFilters.categoryId]);
 
   const handleToday = () => {
     setCurrentDate(new Date());
@@ -109,22 +175,12 @@ function App() {
   };
 
   const handlePrevious = () => {
-    const step =
-      activeView === "week"
-          ? -7
-          : activeView === "year"
-            ? -365
-            : -30;
+    const step = activeView === "week" ? -7 : -30;
     setCurrentDate((date) => addCalendarDays(date, step));
   };
 
   const handleNext = () => {
-    const step =
-      activeView === "week"
-          ? 7
-          : activeView === "year"
-            ? 365
-            : 30;
+    const step = activeView === "week" ? 7 : 30;
     setCurrentDate((date) => addCalendarDays(date, step));
   };
 
@@ -134,6 +190,31 @@ function App() {
 
   const handleSelectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
+    setSelectedBlockId(undefined);
+    setSelectedBlockIds([]);
+  };
+
+  const handleSelectBlock = (blockId?: string, additive = false) => {
+    if (!blockId) {
+      setSelectedBlockId(undefined);
+      setSelectedBlockIds([]);
+      return;
+    }
+
+    if (additive) {
+      setSelectedBlockIds((currentIds) => {
+        const nextIds = currentIds.includes(blockId)
+          ? currentIds.filter((currentId) => currentId !== blockId)
+          : [...currentIds, blockId];
+        setSelectedBlockId(nextIds.at(-1));
+        return nextIds;
+      });
+    } else {
+      setSelectedBlockId(blockId);
+      setSelectedBlockIds([blockId]);
+    }
+
+    setSelectedTaskId(undefined);
   };
 
   const handleUpdateSettings = (nextSettings: AppSettings) => {
@@ -157,11 +238,13 @@ function App() {
       .getSnapshot()
       .then((snapshot) => {
         setCategories(snapshot.categories);
-        setTaskLists(snapshot.taskLists);
         setTasks(snapshot.tasks);
         setTimeBlocks(snapshot.timeBlocks);
         setSelectedTaskId(snapshot.tasks[0]?.id);
         setSelectedBlockId(snapshot.timeBlocks[0]?.id);
+        setSelectedBlockIds(
+          snapshot.timeBlocks[0]?.id ? [snapshot.timeBlocks[0].id] : [],
+        );
       })
       .catch((error: unknown) => {
         setLoadError(
@@ -236,7 +319,6 @@ function App() {
   const handleDeleteCategory = async (categoryId: string) => {
     await window.plannerAPI.deleteCategory(categoryId);
     const snapshot = await window.plannerAPI.getSnapshot();
-    setTaskLists(snapshot.taskLists);
     setTasks(snapshot.tasks);
     setTimeBlocks(snapshot.timeBlocks);
     setCategories((currentCategories) =>
@@ -248,6 +330,7 @@ function App() {
     const createdBlock = await window.plannerAPI.createTimeBlock(timeBlock);
     setTimeBlocks((currentBlocks) => [...currentBlocks, createdBlock]);
     setSelectedBlockId(createdBlock.id);
+    setSelectedBlockIds([createdBlock.id]);
   };
 
   const handleUpdateTimeBlock = async (timeBlock: TimeBlock) => {
@@ -275,6 +358,9 @@ function App() {
       ),
     );
     setSelectedBlockId(updatedBlock.id);
+    setSelectedBlockIds((currentIds) =>
+      currentIds.includes(updatedBlock.id) ? currentIds : [updatedBlock.id],
+    );
   };
 
   const applyRecurringTimeBlockUpdate = async (
@@ -289,10 +375,10 @@ function App() {
       scope,
     });
     setCategories(snapshot.categories);
-    setTaskLists(snapshot.taskLists);
     setTasks(snapshot.tasks);
     setTimeBlocks(snapshot.timeBlocks);
     setSelectedBlockId(undefined);
+    setSelectedBlockIds([]);
     setPendingRecurringUpdate(undefined);
   };
 
@@ -313,6 +399,9 @@ function App() {
         (block) => block.id !== seriesId,
       );
       setSelectedBlockId(nextBlocks[0]?.id);
+      setSelectedBlockIds((currentIds) =>
+        currentIds.filter((blockId) => blockId !== seriesId),
+      );
       return nextBlocks;
     });
   };
@@ -351,6 +440,7 @@ function App() {
       if (isAwaitingGoKey) {
         const navMap: Partial<Record<string, NavItemId>> = {
           c: "calendar",
+          f: "pomodoro",
           k: "tasks",
           s: "stats",
           p: "settings",
@@ -368,7 +458,7 @@ function App() {
         return;
       }
 
-      if (["1", "2", "3"].includes(key)) {
+      if (["1", "2"].includes(key)) {
         setActiveView(calendarShortcutViews[Number(key) - 1]);
         return;
       }
@@ -409,7 +499,7 @@ function App() {
           onSelectView={setActiveView}
           onToday={handleToday}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-          showViewSwitcher={activeItem !== "tasks"}
+          showViewSwitcher={activeItem === "calendar"}
         />
 
         <div className="content">
@@ -418,10 +508,10 @@ function App() {
             activeView={activeView}
             categories={categories}
             currentDate={currentDate}
-            defaultTaskListId={taskLists[0]?.id ?? ""}
             selectedCalendarCategoryId={selectedCalendarCategoryId}
+            selectedStatsDate={selectedStatsDate}
             settings={settings}
-            onSelectBlock={setSelectedBlockId}
+            onSelectBlock={handleSelectBlock}
             onSelectTask={handleSelectTask}
             onToggleTask={handleToggleTask}
             onPlanSession={handleCreateTimeBlock}
@@ -435,11 +525,17 @@ function App() {
             onUpdateTimeBlock={handleUpdateTimeBlock}
             onShiftCalendarDays={handleShiftCalendarDays}
             selectedBlockId={selectedBlockId}
+            selectedBlockIds={selectedBlockIds}
             selectedDate={selectedDate}
             selectedTaskId={selectedTaskId}
+            statsFilters={statsFilters}
             tasks={tasks}
-            timeBlocks={visibleTimeBlocks}
+            timeBlocks={
+              activeItem === "calendar" ? calendarTimeBlocks : visibleTimeBlocks
+            }
             onSelectDate={setSelectedDate}
+            onSelectStatsDate={setSelectedStatsDate}
+            onOpenFocusPage={() => setActiveItem("pomodoro")}
             onUpdateSettings={handleUpdateSettings}
           />
           <InspectorPanel
@@ -448,15 +544,28 @@ function App() {
             categories={categories}
             compactTaskList={settings.compactTodo}
             tasks={tasks}
-            timeBlocks={visibleTimeBlocks}
-            onSelectBlock={setSelectedBlockId}
+            timeBlocks={
+              activeItem === "calendar" ? calendarTimeBlocks : visibleTimeBlocks
+            }
+            weekStartDay={settings.weekStartDay}
+            showHiddenCalendarCategories={showHiddenCalendarCategories}
+            onToggleHiddenCalendarCategories={setShowHiddenCalendarCategories}
+            onSelectBlock={handleSelectBlock}
             onSelectTask={handleSelectTask}
             onToggleTask={handleToggleTask}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onUpdateCategory={handleUpdateCategory}
             onUpdateTimeBlock={handleUpdateTimeBlock}
             onDeleteTimeBlock={handleDeleteTimeBlock}
             selectedBlockId={selectedBlockId}
+            selectedBlockIds={selectedBlockIds}
             selectedDate={selectedDate}
+            selectedStatsDate={selectedStatsDate}
             selectedTaskId={selectedTaskId}
+            statsFilters={statsFilters}
+            onUpdateStatsFilters={setStatsFilters}
+            onSelectStatsDate={setSelectedStatsDate}
           />
         </div>
       </main>

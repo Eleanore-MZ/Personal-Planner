@@ -1,26 +1,33 @@
-import type { TimeBlock } from "../../types/domain";
-import { getDailyPlannedHours } from "../../utils/stats";
-
-type DailyPlannedHoursChartProps = {
-  timeBlocks: TimeBlock[];
+export type PlannedHoursDatum = {
+  label: string;
+  hours: number;
 };
 
-function DailyPlannedHoursChart({ timeBlocks }: DailyPlannedHoursChartProps) {
-  const data = getDailyPlannedHours(timeBlocks);
+type DailyPlannedHoursChartProps = {
+  data: PlannedHoursDatum[];
+  title?: string;
+};
+
+function DailyPlannedHoursChart({
+  data,
+  title = "Planned hours this week",
+}: DailyPlannedHoursChartProps) {
   const maxHours = Math.max(...data.map((item) => item.hours), 1);
+  const hasData = data.some((item) => item.hours > 0);
 
   return (
     <section className="stats-card">
       <div className="stats-card-header">
         <div>
           <div className="panel-kicker">Daily plan</div>
-          <h2>Planned hours this week</h2>
+          <h2>{title}</h2>
         </div>
       </div>
 
-      <div className="vertical-chart">
-        {data.map((day) => (
-          <div className="vertical-chart-column" key={day.label}>
+      {hasData ? (
+        <div className="vertical-chart">
+          {data.map((day, index) => (
+          <div className="vertical-chart-column" key={`${day.label}-${index}`}>
             <div className="vertical-bar-wrap">
               <div
                 className="vertical-bar"
@@ -30,11 +37,15 @@ function DailyPlannedHoursChart({ timeBlocks }: DailyPlannedHoursChartProps) {
             <strong>{day.hours.toFixed(1)}h</strong>
             <span>{day.label}</span>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          No block time for this period under the current filters.
+        </div>
+      )}
     </section>
   );
 }
 
 export default DailyPlannedHoursChart;
-

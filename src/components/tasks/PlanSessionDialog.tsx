@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { Task, TimeBlock } from "../../types/domain";
+import type { Task } from "../../types/domain";
+import type { CreateTimeBlockInput } from "../../types/plannerApi";
 
 type PlanSessionDialogProps = {
   task: Task;
   onClose: () => void;
-  onPlanSession: (timeBlock: TimeBlock) => void;
+  onPlanSession: (timeBlock: CreateTimeBlockInput) => void;
 };
 
 const toDateInputValue = (date: Date) => {
@@ -37,6 +38,9 @@ function PlanSessionDialog({
       taskId: task.id,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
+      outcome: "active",
+      kind: "task-session",
+      source: "manual",
     });
     onClose();
   };

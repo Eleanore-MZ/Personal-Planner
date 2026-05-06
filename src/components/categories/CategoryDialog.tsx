@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { Category } from "../../types/domain";
+import type { Category, TimeBlockKind } from "../../types/domain";
 import type { CreateCategoryInput } from "../../types/plannerApi";
 import { getCategoryAccentColor } from "../../utils/calendar";
+import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
 
 type CategoryDialogProps = {
   category?: Category;
@@ -10,6 +11,33 @@ type CategoryDialogProps = {
   onUpdateCategory: (input: Category) => void | Promise<void>;
   onDeleteCategory: (categoryId: string) => void | Promise<void>;
 };
+
+const blockKindOptions: Array<{
+  value: TimeBlockKind;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "event",
+    label: "Event",
+    description: "Normal calendar event",
+  },
+  {
+    value: "task-session",
+    label: "Task",
+    description: "Work session linked to a task",
+  },
+  {
+    value: "habit",
+    label: "Habit",
+    description: "Repeated personal practice like drawing or writing",
+  },
+  {
+    value: "routine",
+    label: "Routine",
+    description: "Regular life block like sleep or meals",
+  },
+];
 
 function CategoryDialog({
   category,
@@ -22,6 +50,18 @@ function CategoryDialog({
   const [name, setName] = useState(category?.name ?? "");
   const [description, setDescription] = useState(category?.description ?? "");
   const [color, setColor] = useState(initialColor);
+  const [defaultBlockKind, setDefaultBlockKind] = useState<TimeBlockKind>(
+    category?.defaultBlockKind ?? "event",
+  );
+  const [hiddenFromCalendar, setHiddenFromCalendar] = useState(
+    category?.hiddenFromCalendar ?? false,
+  );
+  const [includeInStatsByDefault, setIncludeInStatsByDefault] = useState(
+    category?.includeInStatsByDefault ?? true,
+  );
+  const selectedBlockKindDescription =
+    blockKindOptions.find((option) => option.value === defaultBlockKind)
+      ?.description ?? "";
 
   const handleColorTextChange = (value: string) => {
     if (/^#[0-9a-f]{0,6}$/i.test(value)) {
@@ -41,12 +81,18 @@ function CategoryDialog({
         name: trimmedName,
         description,
         color,
+        defaultBlockKind,
+        hiddenFromCalendar,
+        includeInStatsByDefault,
       });
     } else {
       await onCreateCategory({
         name: trimmedName,
         description,
         color,
+        defaultBlockKind,
+        hiddenFromCalendar,
+        includeInStatsByDefault,
       });
     }
 
@@ -111,6 +157,35 @@ function CategoryDialog({
               value={description}
             />
           </label>
+          <div className="dialog-field dialog-wide-field">
+            <span>Default block kind</span>
+            <SegmentedControl
+              ariaLabel="Default block kind"
+              compact
+              onChange={setDefaultBlockKind}
+              options={blockKindOptions}
+              value={defaultBlockKind}
+            />
+            <small className="field-helper-text">
+              {selectedBlockKindDescription}
+            </small>
+          </div>
+          <div className="dialog-field">
+            <span>Calendar</span>
+            <ToggleRow
+              checked={hiddenFromCalendar}
+              label="Hidden from calendar"
+              onChange={setHiddenFromCalendar}
+            />
+          </div>
+          <div className="dialog-field">
+            <span>Stats</span>
+            <ToggleRow
+              checked={includeInStatsByDefault}
+              label="Include in stats by default"
+              onChange={setIncludeInStatsByDefault}
+            />
+          </div>
         </div>
 
         <div className="fake-dialog-actions">

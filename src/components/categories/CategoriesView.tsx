@@ -11,6 +11,13 @@ type CategoriesViewProps = {
   onDeleteCategory: (categoryId: string) => void | Promise<void>;
 };
 
+const blockKindLabels: Record<Category["defaultBlockKind"], string> = {
+  event: "Event",
+  "task-session": "Task session",
+  habit: "Habit",
+  routine: "Routine",
+};
+
 function CategoriesView({
   categories,
   onCreateCategory,
@@ -39,8 +46,14 @@ function CategoriesView({
         </div>
       </section>
 
-      <div className="category-grid">
-        {categories.map((category) => {
+      {categories.length === 0 ? (
+        <div className="empty-state">
+          No visible categories yet. Create one to color-code calendar blocks and
+          stats.
+        </div>
+      ) : (
+        <div className="category-grid">
+          {categories.map((category) => {
           const accentColor = getCategoryAccentColor(category.color);
           return (
             <button
@@ -55,10 +68,26 @@ function CategoriesView({
               />
               <h3>{category.name}</h3>
               <p>{category.description}</p>
+              <div className="category-card-meta">
+                <span className="category-meta-pill">
+                  Default: {blockKindLabels[category.defaultBlockKind]}
+                </span>
+                <span className={category.hiddenFromCalendar ? "muted-pill" : ""}>
+                  {category.hiddenFromCalendar
+                    ? "Hidden from calendar"
+                    : "Shown on calendar"}
+                </span>
+                <span className={category.includeInStatsByDefault ? "" : "muted-pill"}>
+                  {category.includeInStatsByDefault
+                    ? "Included in stats"
+                    : "Stats off by default"}
+                </span>
+              </div>
             </button>
           );
-        })}
-      </div>
+          })}
+        </div>
+      )}
 
       {isCreating || editingCategory ? (
         <CategoryDialog

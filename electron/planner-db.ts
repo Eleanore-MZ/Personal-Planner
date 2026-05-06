@@ -3,24 +3,39 @@ import { app } from 'electron'
 import path from 'node:path'
 import {
   sampleCategories,
-  sampleTaskLists,
   sampleTasks,
   sampleTimeBlocks,
 } from '../src/data/sampleData'
-import type { Category, Task, TaskList, TimeBlock } from '../src/types/domain'
+import type { Category, Task, TimeBlock } from '../src/types/domain'
 
 export type PlannerSnapshot = {
   categories: Category[]
-  taskLists: TaskList[]
   tasks: Task[]
   timeBlocks: TimeBlock[]
 }
 
-export type CreateCategoryInput = Omit<Category, 'id'>
+export type CreateCategoryInput = Omit<
+  Category,
+  'id' | 'defaultBlockKind' | 'hiddenFromCalendar' | 'includeInStatsByDefault'
+> &
+  Partial<
+    Pick<
+      Category,
+      'defaultBlockKind' | 'hiddenFromCalendar' | 'includeInStatsByDefault'
+    >
+  >
 
 export type CreateTaskInput = Omit<Task, 'id'>
 
-export type CreateTimeBlockInput = Omit<TimeBlock, 'id'> & { id?: string }
+export type CreateTimeBlockInput = Omit<
+  TimeBlock,
+  'id' | 'outcome' | 'status' | 'kind' | 'source'
+> & {
+  id?: string
+  outcome?: TimeBlock['outcome']
+  kind?: TimeBlock['kind']
+  source?: TimeBlock['source']
+}
 
 export type UpdateCategoryInput = Category
 
@@ -41,24 +56,18 @@ type CategoryRow = {
   name: string
   color: Category['color']
   description: string
-}
-
-type TaskListRow = {
-  id: string
-  name: string
-  description: string
-  category_id: string
+  default_block_kind: Category['defaultBlockKind'] | null
+  hidden_from_calendar: 0 | 1 | null
+  include_in_stats_by_default: 0 | 1 | null
 }
 
 type TaskRow = {
   id: string
   title: string
   notes: string
-  list_id: string
   category_id: string
   status: Task['status']
   priority: Task['priority']
-  estimated_minutes: number
   due_date: string | null
   planned_time_block_id: string | null
 }
@@ -78,6 +87,11 @@ type TimeBlockRow = {
   task_id: string | null
   starts_at: string
   ends_at: string
+  status: TimeBlock['status'] | null
+  outcome: TimeBlock['outcome'] | null
+  kind: TimeBlock['kind'] | null
+  source: TimeBlock['source'] | null
+  is_all_day: 0 | 1
   recurrence_frequency: TimeBlock['recurrenceFrequency'] | null
   recurrence_interval: number | null
   recurrence_weekdays: string | null
@@ -138,6 +152,43 @@ const serializeRecurrenceExceptions = (exceptions?: string[]) =>
 const normalizeRecurrenceEndMode = (mode: TimeBlock['recurrenceEndMode'] | null, endDate: string | null) =>
   mode === 'never' && endDate ? 'on' : mode ?? (endDate ? 'on' : 'never')
 
+const timeBlockOutcomes: TimeBlock['outcome'][] = ['active', 'abandoned']
+const timeBlockKinds: TimeBlock['kind'][] = ['event', 'task-session', 'habit', 'routine']
+const timeBlockSources: TimeBlock['source'][] = ['manual', 'pomodoro', 'generated', 'imported']
+
+const mapStatusToOutcome = (status?: TimeBlock['status'] | null): TimeBlock['outcome'] => {
+  if (status === 'skipped' || status === 'canceled') {
+    return 'abandoned'
+  }
+
+  return 'active'
+}
+
+const mapOutcomeToStatus = (outcome?: TimeBlock['outcome'] | null): NonNullable<TimeBlock['status']> => {
+  if (outcome === 'abandoned') {
+    return 'skipped'
+  }
+
+  return 'planned'
+}
+
+const normalizeTimeBlockOutcome = (
+  outcome?: TimeBlock['outcome'] | null,
+  legacyStatus?: TimeBlock['status'] | null,
+): TimeBlock['outcome'] =>
+  outcome && timeBlockOutcomes.includes(outcome)
+    ? outcome
+    : mapStatusToOutcome(legacyStatus)
+
+const normalizeTimeBlockKind = (
+  kind?: TimeBlock['kind'] | Category['defaultBlockKind'] | null,
+): TimeBlock['kind'] => (kind && timeBlockKinds.includes(kind) ? kind : 'event')
+
+const normalizeTimeBlockSource = (
+  source?: TimeBlock['source'] | null,
+): TimeBlock['source'] =>
+  source && timeBlockSources.includes(source) ? source : 'manual'
+
 export function initializePlannerDatabase() {
   const databasePath = path.join(app.getPath('userData'), 'planner.sqlite3')
   db = new Database(databasePath)
@@ -160,29 +211,21 @@ function createSchema(database: Database.Database) {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       color TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT ''
-    );
-
-    CREATE TABLE IF NOT EXISTS task_lists (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
-      category_id TEXT NOT NULL,
-      FOREIGN KEY (category_id) REFERENCES categories(id)
+      default_block_kind TEXT NOT NULL DEFAULT 'event',
+      hidden_from_calendar INTEGER NOT NULL DEFAULT 0,
+      include_in_stats_by_default INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       notes TEXT NOT NULL DEFAULT '',
-      list_id TEXT NOT NULL,
       category_id TEXT NOT NULL,
       status TEXT NOT NULL,
       priority TEXT NOT NULL,
-      estimated_minutes INTEGER NOT NULL DEFAULT 60,
       due_date TEXT,
       planned_time_block_id TEXT,
-      FOREIGN KEY (list_id) REFERENCES task_lists(id),
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
 
@@ -202,6 +245,11 @@ function createSchema(database: Database.Database) {
       task_id TEXT,
       starts_at TEXT NOT NULL,
       ends_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'planned',
+      outcome TEXT NOT NULL DEFAULT 'active',
+      kind TEXT NOT NULL DEFAULT 'event',
+      source TEXT NOT NULL DEFAULT 'manual',
+      is_all_day INTEGER NOT NULL DEFAULT 0,
       recurrence_frequency TEXT NOT NULL DEFAULT 'none',
       recurrence_interval INTEGER NOT NULL DEFAULT 1,
       recurrence_weekdays TEXT,
@@ -214,43 +262,160 @@ function createSchema(database: Database.Database) {
     );
   `)
 
+  const categoryColumns = database
+    .prepare('PRAGMA table_info(categories)')
+    .all() as Array<{ name: string }>
+  const categoryColumnNames = new Set(categoryColumns.map((column) => column.name))
+  if (!categoryColumnNames.has('default_block_kind')) {
+    database
+      .prepare("ALTER TABLE categories ADD COLUMN default_block_kind TEXT NOT NULL DEFAULT 'event'")
+      .run()
+  }
+  if (!categoryColumnNames.has('hidden_from_calendar')) {
+    database
+      .prepare('ALTER TABLE categories ADD COLUMN hidden_from_calendar INTEGER NOT NULL DEFAULT 0')
+      .run()
+  }
+  if (!categoryColumnNames.has('include_in_stats_by_default')) {
+    database
+      .prepare(
+        'ALTER TABLE categories ADD COLUMN include_in_stats_by_default INTEGER NOT NULL DEFAULT 1',
+      )
+      .run()
+  }
+
+  const taskColumns = database
+    .prepare('PRAGMA table_info(tasks)')
+    .all() as Array<{ name: string }>
+  const taskColumnNames = new Set(taskColumns.map((column) => column.name))
+  database.exec('DROP TABLE IF EXISTS tasks_without_lists')
+  database.exec('DROP TABLE IF EXISTS tasks_without_estimates')
+  if (taskColumnNames.has('list_id') || taskColumnNames.has('estimated_minutes')) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+
+      CREATE TABLE tasks_without_estimates (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        category_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        due_date TEXT,
+        planned_time_block_id TEXT,
+        FOREIGN KEY (category_id) REFERENCES categories(id)
+      );
+
+      INSERT INTO tasks_without_estimates (
+        id, title, notes, category_id, status, priority,
+        due_date, planned_time_block_id
+      )
+      SELECT
+        id, title, notes, category_id, status, priority,
+        due_date, planned_time_block_id
+      FROM tasks;
+
+      DROP TABLE tasks;
+      ALTER TABLE tasks_without_estimates RENAME TO tasks;
+
+      PRAGMA foreign_keys = ON;
+    `)
+  }
+
+  database.exec('DROP TABLE IF EXISTS task_lists')
+
   const timeBlockColumns = database
     .prepare('PRAGMA table_info(time_blocks)')
     .all() as Array<{ name: string }>
-  const columnNames = new Set(timeBlockColumns.map((column) => column.name))
-  if (!columnNames.has('recurrence_frequency')) {
+  const timeBlockColumnNames = new Set(timeBlockColumns.map((column) => column.name))
+  if (!timeBlockColumnNames.has('status')) {
+    database
+      .prepare("ALTER TABLE time_blocks ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'")
+      .run()
+  }
+  if (!timeBlockColumnNames.has('outcome')) {
+    database
+      .prepare("ALTER TABLE time_blocks ADD COLUMN outcome TEXT NOT NULL DEFAULT 'active'")
+      .run()
+    database
+      .prepare(
+        `UPDATE time_blocks
+         SET outcome = CASE status
+           WHEN 'skipped' THEN 'abandoned'
+           WHEN 'canceled' THEN 'abandoned'
+           ELSE 'active'
+         END`,
+      )
+      .run()
+  } else {
+    database
+      .prepare(
+        `UPDATE time_blocks
+         SET outcome = CASE status
+           WHEN 'skipped' THEN 'abandoned'
+           WHEN 'canceled' THEN 'abandoned'
+           ELSE 'active'
+         END
+         WHERE outcome IS NULL
+            OR outcome NOT IN ('active', 'abandoned')`,
+      )
+      .run()
+  }
+  database
+    .prepare(
+      `UPDATE time_blocks
+       SET outcome = 'active'
+       WHERE outcome IN ('scheduled', 'recorded')`,
+    )
+    .run()
+  if (!timeBlockColumnNames.has('kind')) {
+    database
+      .prepare("ALTER TABLE time_blocks ADD COLUMN kind TEXT NOT NULL DEFAULT 'event'")
+      .run()
+  }
+  if (!timeBlockColumnNames.has('source')) {
+    database
+      .prepare("ALTER TABLE time_blocks ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'")
+      .run()
+  }
+  if (!timeBlockColumnNames.has('recurrence_frequency')) {
     database
       .prepare(
         "ALTER TABLE time_blocks ADD COLUMN recurrence_frequency TEXT NOT NULL DEFAULT 'none'",
       )
       .run()
   }
-  if (!columnNames.has('recurrence_end_date')) {
+  if (!timeBlockColumnNames.has('is_all_day')) {
+    database
+      .prepare("ALTER TABLE time_blocks ADD COLUMN is_all_day INTEGER NOT NULL DEFAULT 0")
+      .run()
+  }
+  if (!timeBlockColumnNames.has('recurrence_end_date')) {
     database
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_end_date TEXT')
       .run()
   }
-  if (!columnNames.has('recurrence_interval')) {
+  if (!timeBlockColumnNames.has('recurrence_interval')) {
     database
       .prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_interval INTEGER NOT NULL DEFAULT 1")
       .run()
   }
-  if (!columnNames.has('recurrence_weekdays')) {
+  if (!timeBlockColumnNames.has('recurrence_weekdays')) {
     database
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_weekdays TEXT')
       .run()
   }
-  if (!columnNames.has('recurrence_end_mode')) {
+  if (!timeBlockColumnNames.has('recurrence_end_mode')) {
     database
       .prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_mode TEXT NOT NULL DEFAULT 'never'")
       .run()
   }
-  if (!columnNames.has('recurrence_count')) {
+  if (!timeBlockColumnNames.has('recurrence_count')) {
     database
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_count INTEGER')
       .run()
   }
-  if (!columnNames.has('recurrence_exceptions')) {
+  if (!timeBlockColumnNames.has('recurrence_exceptions')) {
     database
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT')
       .run()
@@ -267,21 +432,23 @@ function seedDefaults(database: Database.Database) {
   }
 
   const insertCategory = database.prepare(`
-    INSERT INTO categories (id, name, color, description)
-    VALUES (@id, @name, @color, @description)
-  `)
-  const insertTaskList = database.prepare(`
-    INSERT INTO task_lists (id, name, description, category_id)
-    VALUES (@id, @name, @description, @categoryId)
+    INSERT INTO categories (
+      id, name, color, description, default_block_kind,
+      hidden_from_calendar, include_in_stats_by_default
+    )
+    VALUES (
+      @id, @name, @color, @description, @defaultBlockKind,
+      @hiddenFromCalendar, @includeInStatsByDefault
+    )
   `)
   const insertTask = database.prepare(`
     INSERT INTO tasks (
-      id, title, notes, list_id, category_id, status, priority,
-      estimated_minutes, due_date, planned_time_block_id
+      id, title, notes, category_id, status, priority,
+      due_date, planned_time_block_id
     )
     VALUES (
-      @id, @title, @notes, @listId, @categoryId, @status, @priority,
-      @estimatedMinutes, @dueDate, @plannedTimeBlockId
+      @id, @title, @notes, @categoryId, @status, @priority,
+      @dueDate, @plannedTimeBlockId
     )
   `)
   const insertSubtask = database.prepare(`
@@ -291,12 +458,14 @@ function seedDefaults(database: Database.Database) {
   const insertTimeBlock = database.prepare(`
     INSERT INTO time_blocks (
       id, title, notes, category_id, task_id, starts_at, ends_at,
+      status, outcome, kind, source, is_all_day,
       recurrence_frequency, recurrence_interval, recurrence_weekdays,
       recurrence_end_mode, recurrence_end_date, recurrence_count,
       recurrence_exceptions
     )
     VALUES (
       @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
+      @status, @outcome, @kind, @source, @isAllDay,
       @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
       @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
       @recurrenceExceptions
@@ -304,8 +473,14 @@ function seedDefaults(database: Database.Database) {
   `)
 
   const seed = database.transaction(() => {
-    sampleCategories.forEach((category) => insertCategory.run(category))
-    sampleTaskLists.forEach((taskList) => insertTaskList.run(taskList))
+    sampleCategories.forEach((category) =>
+      insertCategory.run({
+        ...category,
+        defaultBlockKind: normalizeTimeBlockKind(category.defaultBlockKind),
+        hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+        includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0,
+      }),
+    )
     sampleTasks.forEach((task) => {
       insertTask.run({
         ...task,
@@ -324,6 +499,11 @@ function seedDefaults(database: Database.Database) {
       insertTimeBlock.run({
         ...block,
         taskId: block.taskId ?? null,
+        outcome: normalizeTimeBlockOutcome(block.outcome, block.status),
+        status: mapOutcomeToStatus(normalizeTimeBlockOutcome(block.outcome, block.status)),
+        kind: normalizeTimeBlockKind(block.kind),
+        source: normalizeTimeBlockSource(block.source),
+        isAllDay: block.isAllDay ? 1 : 0,
         recurrenceFrequency: block.recurrenceFrequency ?? 'none',
         recurrenceInterval: block.recurrenceInterval ?? 1,
         recurrenceWeekdays: serializeRecurrenceWeekdays(block.recurrenceWeekdays),
@@ -341,7 +521,6 @@ function seedDefaults(database: Database.Database) {
 export function getPlannerSnapshot(): PlannerSnapshot {
   return {
     categories: getCategories(),
-    taskLists: getTaskLists(),
     tasks: getTasks(),
     timeBlocks: getTimeBlocks(),
   }
@@ -354,32 +533,69 @@ export function getCategories(): Category[] {
     name: row.name,
     color: row.color,
     description: row.description,
+    defaultBlockKind: normalizeTimeBlockKind(row.default_block_kind),
+    hiddenFromCalendar: Boolean(row.hidden_from_calendar),
+    includeInStatsByDefault: row.include_in_stats_by_default !== 0,
   }))
 }
 
 export function createCategory(input: CreateCategoryInput): Category {
   const category: Category = {
     id: createId('cat'),
-    ...input,
+    name: input.name,
+    color: input.color,
+    description: input.description,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true,
   }
 
   getDb()
     .prepare(
-      'INSERT INTO categories (id, name, color, description) VALUES (@id, @name, @color, @description)',
+      `INSERT INTO categories (
+        id, name, color, description, default_block_kind,
+        hidden_from_calendar, include_in_stats_by_default
+      )
+      VALUES (
+        @id, @name, @color, @description, @defaultBlockKind,
+        @hiddenFromCalendar, @includeInStatsByDefault
+      )`,
     )
-    .run(category)
+    .run({
+      ...category,
+      hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+      includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0,
+    })
 
   return category
 }
 
 export function updateCategory(input: UpdateCategoryInput): Category {
+  const category: Category = {
+    ...input,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true,
+  }
+
   getDb()
     .prepare(
-      'UPDATE categories SET name = @name, color = @color, description = @description WHERE id = @id',
+      `UPDATE categories
+       SET name = @name,
+           color = @color,
+           description = @description,
+           default_block_kind = @defaultBlockKind,
+           hidden_from_calendar = @hiddenFromCalendar,
+           include_in_stats_by_default = @includeInStatsByDefault
+       WHERE id = @id`,
     )
-    .run(input)
+    .run({
+      ...category,
+      hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+      includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0,
+    })
 
-  return input
+  return category
 }
 
 export function deleteCategory(categoryId: string) {
@@ -395,11 +611,6 @@ export function deleteCategory(categoryId: string) {
   const remove = database.transaction(() => {
     database
       .prepare(
-        'UPDATE task_lists SET category_id = @fallbackCategoryId WHERE category_id = @categoryId',
-      )
-      .run({ categoryId, fallbackCategoryId: fallbackCategory.id })
-    database
-      .prepare(
         'UPDATE tasks SET category_id = @fallbackCategoryId WHERE category_id = @categoryId',
       )
       .run({ categoryId, fallbackCategoryId: fallbackCategory.id })
@@ -413,16 +624,6 @@ export function deleteCategory(categoryId: string) {
 
   remove()
   return categoryId
-}
-
-export function getTaskLists(): TaskList[] {
-  const rows = getDb().prepare('SELECT * FROM task_lists ORDER BY name').all() as TaskListRow[]
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    categoryId: row.category_id,
-  }))
 }
 
 export function getTasks(): Task[] {
@@ -442,11 +643,9 @@ export function getTasks(): Task[] {
       id: row.id,
       title: row.title,
       notes: row.notes,
-      listId: row.list_id,
       categoryId: row.category_id,
       status: row.status,
       priority: row.priority,
-      estimatedMinutes: row.estimated_minutes,
       dueDate: row.due_date ?? undefined,
       plannedTimeBlockId: row.planned_time_block_id ?? undefined,
       subtasks: subtasks.length > 0 ? subtasks : undefined,
@@ -465,12 +664,12 @@ export function createTask(input: CreateTaskInput): Task {
     database
       .prepare(`
         INSERT INTO tasks (
-          id, title, notes, list_id, category_id, status, priority,
-          estimated_minutes, due_date, planned_time_block_id
+          id, title, notes, category_id, status, priority,
+          due_date, planned_time_block_id
         )
         VALUES (
-          @id, @title, @notes, @listId, @categoryId, @status, @priority,
-          @estimatedMinutes, @dueDate, @plannedTimeBlockId
+          @id, @title, @notes, @categoryId, @status, @priority,
+          @dueDate, @plannedTimeBlockId
         )
       `)
       .run({
@@ -503,11 +702,9 @@ export function updateTask(input: UpdateTaskInput): Task {
         UPDATE tasks
         SET title = @title,
             notes = @notes,
-            list_id = @listId,
             category_id = @categoryId,
             status = @status,
             priority = @priority,
-            estimated_minutes = @estimatedMinutes,
             due_date = @dueDate,
             planned_time_block_id = @plannedTimeBlockId
         WHERE id = @id
@@ -566,6 +763,10 @@ export function getTimeBlocks(): TimeBlock[] {
     taskId: row.task_id ?? undefined,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
+    outcome: normalizeTimeBlockOutcome(row.outcome, row.status),
+    kind: normalizeTimeBlockKind(row.kind),
+    source: normalizeTimeBlockSource(row.source),
+    isAllDay: Boolean(row.is_all_day),
     recurrenceFrequency: row.recurrence_frequency ?? 'none',
     recurrenceInterval: row.recurrence_interval ?? 1,
     recurrenceWeekdays: parseRecurrenceWeekdays(row.recurrence_weekdays),
@@ -588,6 +789,10 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
     taskId: input.taskId,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
+    outcome: normalizeTimeBlockOutcome(input.outcome),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+    isAllDay: input.isAllDay,
     recurrenceFrequency: input.recurrenceFrequency ?? 'none',
     recurrenceInterval: input.recurrenceInterval ?? 1,
     recurrenceWeekdays: input.recurrenceWeekdays,
@@ -601,12 +806,14 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
     .prepare(`
       INSERT INTO time_blocks (
         id, title, notes, category_id, task_id, starts_at, ends_at,
+        status, outcome, kind, source, is_all_day,
         recurrence_frequency, recurrence_interval, recurrence_weekdays,
         recurrence_end_mode, recurrence_end_date, recurrence_count,
         recurrence_exceptions
       )
       VALUES (
         @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
+        @status, @outcome, @kind, @source, @isAllDay,
         @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
         @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
         @recurrenceExceptions
@@ -615,6 +822,8 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
     .run({
       ...timeBlock,
       taskId: timeBlock.taskId ?? null,
+      status: mapOutcomeToStatus(timeBlock.outcome),
+      isAllDay: timeBlock.isAllDay ? 1 : 0,
       recurrenceFrequency: timeBlock.recurrenceFrequency ?? 'none',
       recurrenceInterval: timeBlock.recurrenceInterval ?? 1,
       recurrenceWeekdays: serializeRecurrenceWeekdays(timeBlock.recurrenceWeekdays),
@@ -637,6 +846,11 @@ export function updateTimeBlock(input: UpdateTimeBlockInput): TimeBlock {
           task_id = @taskId,
           starts_at = @startsAt,
           ends_at = @endsAt,
+          status = @status,
+          outcome = @outcome,
+          kind = @kind,
+          source = @source,
+          is_all_day = @isAllDay,
           recurrence_frequency = @recurrenceFrequency,
           recurrence_interval = @recurrenceInterval,
           recurrence_weekdays = @recurrenceWeekdays,
@@ -649,6 +863,11 @@ export function updateTimeBlock(input: UpdateTimeBlockInput): TimeBlock {
     .run({
       ...input,
       taskId: input.taskId ?? null,
+      outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+      status: mapOutcomeToStatus(normalizeTimeBlockOutcome(input.outcome, input.status)),
+      kind: normalizeTimeBlockKind(input.kind),
+      source: normalizeTimeBlockSource(input.source),
+      isAllDay: input.isAllDay ? 1 : 0,
       recurrenceFrequency: input.recurrenceFrequency ?? 'none',
       recurrenceInterval: input.recurrenceInterval ?? 1,
       recurrenceWeekdays: serializeRecurrenceWeekdays(input.recurrenceWeekdays),
@@ -658,7 +877,12 @@ export function updateTimeBlock(input: UpdateTimeBlockInput): TimeBlock {
       recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions),
     })
 
-  return input
+  return {
+    ...input,
+    outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+  }
 }
 
 const addMs = (date: string, deltaMs: number) =>
@@ -682,6 +906,10 @@ const getSeriesUpdate = (
     taskId: updatedBlock.taskId,
     startsAt: addMs(seriesBlock.startsAt, startDelta),
     endsAt: addMs(seriesBlock.endsAt, endDelta),
+    outcome: updatedBlock.outcome,
+    kind: updatedBlock.kind,
+    source: updatedBlock.source,
+    isAllDay: updatedBlock.isAllDay,
     recurrenceFrequency: updatedBlock.recurrenceFrequency ?? seriesBlock.recurrenceFrequency,
     recurrenceInterval: updatedBlock.recurrenceInterval ?? seriesBlock.recurrenceInterval,
     recurrenceWeekdays: updatedBlock.recurrenceWeekdays ?? seriesBlock.recurrenceWeekdays,

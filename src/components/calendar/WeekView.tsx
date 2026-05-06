@@ -1,18 +1,26 @@
 import {
   formatDayLabel,
   formatHour,
+  addCalendarDays,
   calendarHourHeight,
   getBlocksForDay,
+  getAllDayEndDate,
   getCalendarHours,
+  getCategoryColorValues,
   getWeekDays,
+  isAllDayBlock,
   isSameCalendarDay,
+  startOfDay,
 } from "../../utils/calendar";
-import type { Category, TimeBlock } from "../../types/domain";
+import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { WeekStartDay } from "../../types/app";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import CalendarBlock from "./CalendarBlock";
+import { findCategoryById } from "../../utils/categories";
+import { isTaskComplete } from "../../utils/tasks";
 import {
   useEffect,
+  useCallback,
   useRef,
   useState,
   type CSSProperties,
@@ -27,6 +35,13 @@ const defaultCreatedBlockMinutes = 60;
 const horizontalDayScrollThreshold = 95;
 const horizontalWeekScrollResetMs = 180;
 type ResizeEdge = "start" | "end";
+type AllDayResizeEdge = "start" | "end";
+type AllDaySegment = {
+  block: TimeBlock;
+  endIndex: number;
+  laneIndex: number;
+  startIndex: number;
+};
 
 const getBlockDurationMinutes = (block: TimeBlock) =>
   Math.max(
@@ -107,6 +122,77 @@ const getDateAtWeekMinute = (weekStart: Date, absoluteMinute: number) => {
   date.setDate(date.getDate() + dayOffset);
   date.setHours(Math.floor(minuteOfDay / 60), minuteOfDay % 60, 0, 0);
   return date;
+};
+
+const getDayDistance = (start: Date, end: Date) =>
+  Math.floor((startOfDay(end).getTime() - startOfDay(start).getTime()) / 86400000);
+
+const getAllDaySegments = (
+  allDayBlocks: TimeBlock[],
+  days: Date[],
+): AllDaySegment[] => {
+  const rangeStart = startOfDay(days[0]);
+  const rangeEnd = addCalendarDays(startOfDay(days[days.length - 1]), 1);
+  const segments = allDayBlocks
+    .flatMap((block) => {
+      const blockStart = startOfDay(new Date(block.startsAt));
+      const blockEnd = getAllDayEndDate(block);
+      if (blockEnd <= rangeStart || blockStart >= rangeEnd) {
+        return [];
+      }
+
+      return [
+        {
+          block,
+          endIndex: Math.min(days.length - 1, getDayDistance(rangeStart, addCalendarDays(blockEnd, -1))),
+          laneIndex: 0,
+          startIndex: Math.max(0, getDayDistance(rangeStart, blockStart)),
+        },
+      ];
+    })
+    .sort(
+      (first, second) =>
+        first.startIndex - second.startIndex ||
+        second.endIndex - first.endIndex ||
+        first.block.title.localeCompare(second.block.title),
+    );
+  const laneEnds: number[] = [];
+
+  return segments.map((segment) => {
+    const reusableLane = laneEnds.findIndex((laneEnd) => laneEnd < segment.startIndex);
+    const laneIndex = reusableLane === -1 ? laneEnds.length : reusableLane;
+    laneEnds[laneIndex] = segment.endIndex;
+    return { ...segment, laneIndex };
+  });
+};
+
+const getResizedAllDayBlock = (
+  block: TimeBlock,
+  edge: AllDayResizeEdge,
+  day: Date,
+) => {
+  const currentStart = startOfDay(new Date(block.startsAt));
+  const currentEnd = getAllDayEndDate(block);
+  const candidateStart = startOfDay(day);
+
+  if (edge === "start") {
+    const latestStart = addCalendarDays(currentEnd, -1);
+    return {
+      ...block,
+      startsAt: new Date(
+        Math.min(candidateStart.getTime(), latestStart.getTime()),
+      ).toISOString(),
+    };
+  }
+
+  const candidateEnd = addCalendarDays(candidateStart, 1);
+  const earliestEnd = addCalendarDays(currentStart, 1);
+  return {
+    ...block,
+    endsAt: new Date(
+      Math.max(candidateEnd.getTime(), earliestEnd.getTime()),
+    ).toISOString(),
+  };
 };
 
 const getResizedBlock = (
@@ -241,9 +327,14 @@ type WeekViewProps = {
   visibleStartHour: number;
   weekStartDay: WeekStartDay;
   selectedBlockId?: string;
-  onSelectBlock: (blockId?: string) => void;
+  selectedBlockIds: string[];
+  selectedTaskId?: string;
+  tasks: Task[];
+  onSelectBlock: (blockId?: string, additive?: boolean) => void;
   onCreateBlockSelection: (block: CreateTimeBlockInput) => void;
+  onSelectTask: (taskId: string) => void;
   onShiftDays: (days: number) => void;
+  onToggleTask: (taskId: string) => void | Promise<void>;
   onUpdateBlock: (block: TimeBlock) => void | Promise<void>;
 };
 
@@ -256,12 +347,18 @@ function WeekView({
   visibleStartHour,
   weekStartDay,
   selectedBlockId,
+  selectedBlockIds,
+  selectedTaskId,
+  tasks,
   onSelectBlock,
   onCreateBlockSelection,
+  onSelectTask,
   onShiftDays,
+  onToggleTask,
   onUpdateBlock,
 }: WeekViewProps) {
   const horizontalScrollIntent = useRef(0);
+  const allDayRowRef = useRef<HTMLDivElement>(null);
   const horizontalScrollResetTimeout = useRef<number>();
   const [draggedBlock, setDraggedBlock] = useState<
     { blockId: string; pointerOffsetY: number } | undefined
@@ -288,9 +385,70 @@ function WeekView({
       }
     | undefined
   >();
+  const [allDaySelection, setAllDaySelection] = useState<
+    | {
+        endDayIndex: number;
+        pointerId: number;
+        startDayIndex: number;
+      }
+    | undefined
+  >();
+  const [allDayResize, setAllDayResize] = useState<
+    | {
+        block: TimeBlock;
+        dayIndex: number;
+        edge: AllDayResizeEdge;
+        pointerId: number;
+      }
+    | undefined
+  >();
   const weekDays = getWeekDays(date, weekStartDay);
   const hours = getCalendarHours(visibleStartHour, visibleEndHour);
   const today = new Date();
+  const timedBlocks = blocks.filter((block) => !isAllDayBlock(block));
+  const allDayPreviewBlocks = allDayResize
+    ? blocks.map((block) =>
+        block.id === allDayResize.block.id
+          ? getResizedAllDayBlock(
+              allDayResize.block,
+              allDayResize.edge,
+              weekDays[allDayResize.dayIndex],
+            )
+          : block,
+      )
+    : blocks;
+  const allDaySegments = getAllDaySegments(
+    allDayPreviewBlocks.filter(isAllDayBlock),
+    weekDays,
+  );
+  const dueTasksByDay = weekDays.map((day) =>
+    tasks
+      .filter(
+        (task) =>
+          task.dueDate && isSameCalendarDay(new Date(task.dueDate), day),
+      )
+      .sort(
+        (firstTask, secondTask) =>
+          Number(isTaskComplete(firstTask)) - Number(isTaskComplete(secondTask)) ||
+          firstTask.title.localeCompare(secondTask.title),
+      ),
+  );
+  const allDayLaneCount = Math.max(
+    1,
+    ...allDaySegments.map((segment) => segment.laneIndex + 1),
+  );
+  const allDayVisibleLaneCount = allDayLaneCount + (allDaySelection ? 1 : 0);
+  const getAllDayColumnIndexFromPoint = useCallback((clientX: number) => {
+    const rowBounds = allDayRowRef.current?.getBoundingClientRect();
+    if (!rowBounds || clientX < rowBounds.left || clientX > rowBounds.right) {
+      return undefined;
+    }
+
+    const rawIndex = Math.floor(
+      ((clientX - rowBounds.left) / rowBounds.width) * weekDays.length,
+    );
+    return clamp(rawIndex, 0, weekDays.length - 1);
+  }, [weekDays.length]);
 
   useEffect(() => {
     if (!resizingBlock) {
@@ -372,6 +530,55 @@ function WeekView({
     [],
   );
 
+  useEffect(() => {
+    if (!allDayResize) {
+      return;
+    }
+
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== allDayResize.pointerId) {
+        return;
+      }
+
+      const dayIndex = getAllDayColumnIndexFromPoint(event.clientX);
+      if (dayIndex !== undefined) {
+        setAllDayResize((currentResize) =>
+          currentResize ? { ...currentResize, dayIndex } : undefined,
+        );
+      }
+    };
+
+    const handlePointerUp = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== allDayResize.pointerId) {
+        return;
+      }
+
+      const resizedBlock = getResizedAllDayBlock(
+        allDayResize.block,
+        allDayResize.edge,
+        weekDays[allDayResize.dayIndex],
+      );
+      setAllDayResize(undefined);
+      void onUpdateBlock(resizedBlock);
+    };
+
+    const handlePointerCancel = (event: globalThis.PointerEvent) => {
+      if (event.pointerId === allDayResize.pointerId) {
+        setAllDayResize(undefined);
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [allDayResize, getAllDayColumnIndexFromPoint, onUpdateBlock, weekDays]);
+
   const handleDragStart = (blockId: string, pointerOffsetY: number) => {
     if (resizingBlock) {
       return;
@@ -408,7 +615,7 @@ function WeekView({
 
   const handleDrop = async (event: DragEvent<HTMLDivElement>, day: Date) => {
     event.preventDefault();
-    const block = blocks.find(
+    const block = timedBlocks.find(
       (currentBlock) => currentBlock.id === draggedBlock?.blockId,
     );
     if (!draggedBlock || !block) {
@@ -513,6 +720,148 @@ function WeekView({
       categoryId: defaultCategoryId,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
+    });
+  };
+
+  const handleAllDayDoubleClick = (
+    event: MouseEvent<HTMLDivElement>,
+    day: Date,
+  ) => {
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest(".all-day-chip")
+    ) {
+      return;
+    }
+
+    const startsAt = new Date(day);
+    startsAt.setHours(0, 0, 0, 0);
+    const endsAt = new Date(startsAt);
+    endsAt.setDate(endsAt.getDate() + 1);
+
+    onSelectBlock(undefined);
+    onCreateBlockSelection({
+      title: "",
+      notes: "",
+      categoryId: defaultCategoryId,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+      isAllDay: true,
+      recurrenceFrequency: "none",
+    });
+  };
+
+  const getAllDaySelectionBounds = () => {
+    if (!allDaySelection) {
+      return undefined;
+    }
+
+    return {
+      start: Math.min(
+        allDaySelection.startDayIndex,
+        allDaySelection.endDayIndex,
+      ),
+      end: Math.max(
+        allDaySelection.startDayIndex,
+        allDaySelection.endDayIndex,
+      ),
+    };
+  };
+
+  const createAllDayDraft = (startDayIndex: number, endDayIndex: number) => {
+    const rangeStart = Math.min(startDayIndex, endDayIndex);
+    const rangeEnd = Math.max(startDayIndex, endDayIndex);
+    const startsAt = new Date(weekDays[rangeStart]);
+    startsAt.setHours(0, 0, 0, 0);
+    const endsAt = new Date(weekDays[rangeEnd]);
+    endsAt.setHours(0, 0, 0, 0);
+    endsAt.setDate(endsAt.getDate() + 1);
+
+    onSelectBlock(undefined);
+    onCreateBlockSelection({
+      title: "",
+      notes: "",
+      categoryId: defaultCategoryId,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+      isAllDay: true,
+      recurrenceFrequency: "none",
+    });
+  };
+
+  const handleAllDayPointerDown = (
+    event: PointerEvent<HTMLDivElement>,
+    dayIndex: number,
+  ) => {
+    if (
+      allDayResize ||
+      event.button !== 0 ||
+      (event.target instanceof HTMLElement &&
+        event.target.closest(".all-day-chip"))
+    ) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setAllDaySelection({
+      endDayIndex: dayIndex,
+      pointerId: event.pointerId,
+      startDayIndex: dayIndex,
+    });
+  };
+
+  const handleAllDayPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!allDaySelection || event.pointerId !== allDaySelection.pointerId) {
+      return;
+    }
+
+    const dayIndex = getAllDayColumnIndexFromPoint(event.clientX);
+    if (dayIndex === undefined) {
+      return;
+    }
+
+    setAllDaySelection({ ...allDaySelection, endDayIndex: dayIndex });
+  };
+
+  const handleAllDayPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerId === allDaySelection?.pointerId) {
+      setAllDaySelection(undefined);
+    }
+  };
+
+  const handleAllDayPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (!allDaySelection || event.pointerId !== allDaySelection.pointerId) {
+      return;
+    }
+
+    const { startDayIndex, endDayIndex } = allDaySelection;
+    setAllDaySelection(undefined);
+    if (startDayIndex === endDayIndex) {
+      return;
+    }
+
+    createAllDayDraft(startDayIndex, endDayIndex);
+  };
+
+  const handleAllDayResizeStart = (
+    block: TimeBlock,
+    edge: AllDayResizeEdge,
+    dayIndex: number,
+    event: PointerEvent<HTMLSpanElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectBlock(block.id);
+    setAllDaySelection(undefined);
+    setAllDayResize({
+      block,
+      dayIndex,
+      edge,
+      pointerId: event.pointerId,
     });
   };
 
@@ -688,7 +1037,9 @@ function WeekView({
     if (
       draggedBlock ||
       resizingBlock ||
-      selection
+      selection ||
+      allDaySelection ||
+      allDayResize
     ) {
       return;
     }
@@ -744,6 +1095,176 @@ function WeekView({
         ))}
       </div>
 
+      <div className="week-all-day-label">All day</div>
+      <div
+        className="week-all-day-row"
+        ref={allDayRowRef}
+        style={
+          {
+            "--all-day-lanes": allDayVisibleLaneCount,
+          } as CSSProperties
+        }
+      >
+        {weekDays.map((day, dayIndex) => {
+          const allDaySelectionBounds = getAllDaySelectionBounds();
+          const isInAllDaySelection =
+            allDaySelectionBounds &&
+            dayIndex >= allDaySelectionBounds.start &&
+            dayIndex <= allDaySelectionBounds.end;
+
+          return (
+            <div
+              className={`week-all-day-column${
+                isInAllDaySelection ? " selecting" : ""
+              }`}
+              data-day-index={dayIndex}
+              key={day.toISOString()}
+              style={{
+                gridColumn: dayIndex + 1,
+                gridRow: `1 / span ${allDayVisibleLaneCount}`,
+              }}
+              onDoubleClick={(event) => handleAllDayDoubleClick(event, day)}
+              onPointerCancel={handleAllDayPointerCancel}
+              onPointerDown={(event) => handleAllDayPointerDown(event, dayIndex)}
+              onPointerMove={handleAllDayPointerMove}
+              onPointerUp={handleAllDayPointerUp}
+            />
+          );
+        })}
+        {allDaySelection ? (
+          <div
+            className="all-day-selection-preview"
+            style={{
+              gridColumn: `${
+                Math.min(
+                  allDaySelection.startDayIndex,
+                  allDaySelection.endDayIndex,
+                ) + 1
+              } / ${
+                Math.max(
+                  allDaySelection.startDayIndex,
+                  allDaySelection.endDayIndex,
+                ) + 2
+              }`,
+              gridRow: `${allDayLaneCount + 1}`,
+            }}
+          />
+        ) : null}
+        {allDaySegments.map((segment) => {
+          const category = findCategoryById(categories, segment.block.categoryId);
+          const colors = getCategoryColorValues(category?.color);
+          const segmentStartsAtBlockStart = isSameCalendarDay(
+            new Date(segment.block.startsAt),
+            weekDays[segment.startIndex],
+          );
+          const segmentEndsAtBlockEnd = isSameCalendarDay(
+            addCalendarDays(getAllDayEndDate(segment.block), -1),
+            weekDays[segment.endIndex],
+          );
+          return (
+            <button
+              className={`all-day-chip${
+                selectedBlockId === segment.block.id ||
+                selectedBlockIds.includes(segment.block.id)
+                  ? " selected"
+                  : ""
+              } outcome-${segment.block.outcome} kind-${segment.block.kind}${
+                segment.block.taskId ? " linked-task" : ""
+              }`}
+              key={segment.block.id}
+              onClick={(event) =>
+                onSelectBlock(segment.block.id, event.shiftKey)
+              }
+              onDoubleClick={(event) => event.stopPropagation()}
+              style={
+                {
+                  "--all-day-accent": colors.accent,
+                  "--all-day-background": colors.background,
+                  "--all-day-border": colors.border,
+                  gridColumn: `${segment.startIndex + 1} / ${segment.endIndex + 2}`,
+                  gridRow: `${segment.laneIndex + 1}`,
+                } as CSSProperties
+              }
+              title={segment.block.title}
+              type="button"
+            >
+              {segmentStartsAtBlockStart ? (
+                <span
+                  aria-hidden="true"
+                  className="all-day-chip-resize-handle start"
+                  onPointerDown={(event) =>
+                    handleAllDayResizeStart(
+                      segment.block,
+                      "start",
+                      segment.startIndex,
+                      event,
+                    )
+                  }
+                />
+              ) : null}
+              <span>
+                {segment.block.kind === "habit" ? "Habit: " : ""}
+                {segment.block.kind === "routine" ? "Routine: " : ""}
+                {segment.block.kind === "task-session" && segment.block.taskId
+                  ? "Task: "
+                  : ""}
+                {segment.block.title}
+              </span>
+              {segmentEndsAtBlockEnd ? (
+                <span
+                  aria-hidden="true"
+                  className="all-day-chip-resize-handle end"
+                  onPointerDown={(event) =>
+                    handleAllDayResizeStart(
+                      segment.block,
+                      "end",
+                      segment.endIndex,
+                      event,
+                    )
+                  }
+                />
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="week-due-task-label">Due</div>
+      <div className="week-due-task-row">
+        {dueTasksByDay.map((dayTasks, dayIndex) => (
+          <div
+            className="week-due-task-column"
+            key={weekDays[dayIndex].toISOString()}
+          >
+            {dayTasks.map((task) => {
+              const isComplete = isTaskComplete(task);
+              return (
+                <button
+                  className={`week-due-task-chip${
+                    selectedTaskId === task.id ? " selected" : ""
+                  }${isComplete ? " complete" : ""}`}
+                  key={task.id}
+                  onClick={() => onSelectTask(task.id)}
+                  title={task.title}
+                  type="button"
+                >
+                  <input
+                    aria-label={`Mark ${task.title} ${
+                      isComplete ? "incomplete" : "complete"
+                    }`}
+                    checked={isComplete}
+                    onChange={() => void onToggleTask(task.id)}
+                    onClick={(event) => event.stopPropagation()}
+                    type="checkbox"
+                  />
+                  <span>{task.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
       <div className="hour-labels" aria-hidden="true">
         {hours.map((hour) => (
           <div className="hour-label" key={hour}>
@@ -790,13 +1311,13 @@ function WeekView({
                 />
               ) : null}
               {getLaidOutBlocks(
-                getBlocksForDay(blocks, day).map((block) =>
+                getBlocksForDay(timedBlocks, day).map((block) =>
                   resizingBlock?.previewBlock.id === block.id
                     ? (getBlocksForDay([resizingBlock.previewBlock], day)[0] ??
                       block)
                     : block,
                 ),
-                blocks,
+                timedBlocks,
               ).map(({ block, isCompact, layoutStyle, originalBlock }) => {
                 return (
                   <CalendarBlock
@@ -806,7 +1327,10 @@ function WeekView({
                     categories={categories}
                     isCompact={isCompact}
                     isDragging={draggedBlock?.blockId === block.id}
-                    isSelected={selectedBlockId === block.id}
+                    isSelected={
+                      selectedBlockId === block.id ||
+                      selectedBlockIds.includes(block.id)
+                    }
                     key={block.id}
                     layoutStyle={layoutStyle}
                     onDragEnd={handleDragEnd}

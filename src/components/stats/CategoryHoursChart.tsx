@@ -1,55 +1,59 @@
-import type { Category, TimeBlock } from "../../types/domain";
-import { getCategoryColorValues } from "../../utils/calendar";
-import { getCategoryHours } from "../../utils/stats";
+import type { CategoryHoursDatum } from "../../utils/stats";
 
 type CategoryHoursChartProps = {
-  categories: Category[];
-  timeBlocks: TimeBlock[];
+  data: CategoryHoursDatum[];
+  kicker?: string;
+  title?: string;
 };
 
 function CategoryHoursChart({
-  categories,
-  timeBlocks,
+  data,
+  kicker = "Category hours",
+  title = "Normal time by category",
 }: CategoryHoursChartProps) {
-  const data = getCategoryHours(categories, timeBlocks);
   const maxHours = Math.max(...data.map((item) => item.hours), 1);
 
   return (
     <section className="stats-card">
       <div className="stats-card-header">
         <div>
-          <div className="panel-kicker">Category hours</div>
-          <h2>Planned time by category</h2>
+          <div className="panel-kicker">{kicker}</div>
+          <h2>{title}</h2>
         </div>
       </div>
 
-      <div className="horizontal-chart">
-        {data.map(({ category, hours }) => {
-          const colors = getCategoryColorValues(category.color);
-
-          return (
-            <div className="chart-row" key={category.id}>
-              <div className="chart-label">
-                <span
-                  className="chart-swatch"
-                  style={{ background: colors.accent }}
-                />
-                {category.name}
-              </div>
-              <div className="chart-track">
-                <div
-                  className="chart-bar"
-                  style={{
-                    background: colors.accent,
-                    width: `${(hours / maxHours) * 100}%`,
-                  }}
-                />
-              </div>
-              <strong>{hours.toFixed(1)}h</strong>
+      {data.some((category) => category.hours > 0) ? (
+        <div className="horizontal-chart">
+          {data.map((category) => (
+          <div className="chart-row" key={category.categoryId ?? "uncategorized"}>
+            <div className="chart-label">
+              <span
+                className="chart-swatch"
+                style={{ background: category.color }}
+              />
+              <span>
+                {category.categoryName}
+                {category.detail ? <small>{category.detail}</small> : null}
+              </span>
             </div>
-          );
-        })}
-      </div>
+            <div className="chart-track">
+              <div
+                className="chart-bar"
+                style={{
+                  background: category.color,
+                  width: `${(category.hours / maxHours) * 100}%`,
+                }}
+              />
+            </div>
+            <strong>{category.hours.toFixed(1)}h</strong>
+          </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state">
+          No time block hours match the selected period and filters.
+        </div>
+      )}
     </section>
   );
 }

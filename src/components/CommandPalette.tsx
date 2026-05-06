@@ -23,6 +23,11 @@ const commands: Array<{
     action: ({ onSelectNav }) => onSelectNav("tasks"),
   },
   {
+    label: "Go to Focus",
+    hint: "G then F",
+    action: ({ onSelectNav }) => onSelectNav("pomodoro"),
+  },
+  {
     label: "Go to Stats",
     hint: "G then S",
     action: ({ onSelectNav }) => onSelectNav("stats"),
@@ -41,11 +46,6 @@ const commands: Array<{
     label: "Switch to Month View",
     hint: "2",
     action: ({ onSelectView }) => onSelectView("month"),
-  },
-  {
-    label: "Switch to Year View",
-    hint: "3",
-    action: ({ onSelectView }) => onSelectView("year"),
   },
 ];
 

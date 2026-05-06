@@ -1,10 +1,10 @@
 import { useState } from "react";
 import type { Category, Task } from "../../types/domain";
 import type { CreateTaskInput } from "../../types/plannerApi";
+import { SegmentedControl } from "../ui/ChoiceControls";
 
 type TaskDialogProps = {
   categories: Category[];
-  defaultListId: string;
   mode: "new" | "edit";
   task?: Task;
   onClose: () => void;
@@ -13,9 +13,22 @@ type TaskDialogProps = {
   onDeleteTask: (taskId: string) => void | Promise<void>;
 };
 
+const taskStatusOptions: Array<{ value: Task["status"]; label: string }> = [
+  { value: "todo", label: "Todo" },
+  { value: "in-progress", label: "In progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
+  { value: "canceled", label: "Canceled" },
+];
+
+const taskPriorityOptions: Array<{ value: Task["priority"]; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 function TaskDialog({
   categories,
-  defaultListId,
   mode,
   task,
   onClose,
@@ -31,17 +44,13 @@ function TaskDialog({
   const [categoryId, setCategoryId] = useState(
     task?.categoryId ?? categories[0]?.id ?? "",
   );
-  const listId = task?.listId ?? defaultListId;
   const [status, setStatus] = useState<Task["status"]>(task?.status ?? "todo");
-  const [estimatedMinutes, setEstimatedMinutes] = useState(
-    `${task?.estimatedMinutes ?? 60}`,
-  );
   const [dueDate, setDueDate] = useState(
     task?.dueDate ? task.dueDate.slice(0, 10) : "",
   );
 
   const handleSave = async () => {
-    if (!title.trim() || !categoryId || !listId) {
+    if (!title.trim() || !categoryId) {
       onClose();
       return;
     }
@@ -49,11 +58,9 @@ function TaskDialog({
     const input = {
       title: title.trim(),
       notes,
-      listId,
       categoryId,
       status,
       priority,
-      estimatedMinutes: Number(estimatedMinutes) || 60,
       dueDate: dueDate ? new Date(`${dueDate}T00:00:00`).toISOString() : undefined,
       plannedTimeBlockId: task?.plannedTimeBlockId,
       subtasks: task?.subtasks,
@@ -100,39 +107,26 @@ function TaskDialog({
               value={title}
             />
           </label>
-          <label>
+          <div className="dialog-field">
             <span>Priority</span>
-            <select
-              onChange={(event) =>
-                setPriority(event.target.value as Task["priority"])
-              }
+            <SegmentedControl
+              ariaLabel="Task priority"
+              compact
+              onChange={setPriority}
+              options={taskPriorityOptions}
               value={priority}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </label>
-          <label>
-            <span>Status</span>
-            <select
-              onChange={(event) => setStatus(event.target.value as Task["status"])}
-              value={status}
-            >
-              <option value="todo">To do</option>
-              <option value="in-progress">In progress</option>
-              <option value="done">Done</option>
-            </select>
-          </label>
-          <label>
-            <span>Estimate</span>
-            <input
-              min="0"
-              onChange={(event) => setEstimatedMinutes(event.target.value)}
-              type="number"
-              value={estimatedMinutes}
             />
-          </label>
+          </div>
+          <div className="dialog-field dialog-wide-field">
+            <span>Status</span>
+            <SegmentedControl
+              ariaLabel="Task status"
+              compact
+              onChange={setStatus}
+              options={taskStatusOptions}
+              value={status}
+            />
+          </div>
           <label>
             <span>Due date</span>
             <input

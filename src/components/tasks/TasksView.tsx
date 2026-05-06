@@ -9,7 +9,6 @@ import { isTaskComplete } from "../../utils/tasks";
 
 type TasksViewProps = {
   categories: Category[];
-  defaultListId: string;
   selectedTaskId?: string;
   tasks: Task[];
   timeBlocks: TimeBlock[];
@@ -19,11 +18,11 @@ type TasksViewProps = {
   onSelectTask: (taskId: string) => void;
   onToggleTask: (taskId: string) => void;
   onPlanSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
+  onOpenFocusPage: () => void;
 };
 
 function TasksView({
   categories,
-  defaultListId,
   selectedTaskId,
   tasks,
   timeBlocks,
@@ -33,6 +32,7 @@ function TasksView({
   onSelectTask,
   onToggleTask,
   onPlanSession,
+  onOpenFocusPage,
 }: TasksViewProps) {
   const [dialogMode, setDialogMode] = useState<"new" | "edit" | undefined>();
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
@@ -145,6 +145,7 @@ function TasksView({
         <TaskDetail
           categories={categories}
           onDeleteTask={onDeleteTask}
+          onOpenFocusPage={onOpenFocusPage}
           onPlanSession={() => setIsPlanDialogOpen(true)}
           onUpdateTask={onUpdateTask}
           task={selectedTask}
@@ -155,7 +156,6 @@ function TasksView({
       {dialogMode ? (
         <TaskDialog
           mode={dialogMode}
-          defaultListId={defaultListId}
           onClose={() => setDialogMode(undefined)}
           onCreateTask={onCreateTask}
           onUpdateTask={onUpdateTask}

@@ -1,5 +1,10 @@
 import { sectionPlaceholders, viewPlaceholders } from "../data/placeholders";
-import type { AppSettings, CalendarView, NavItemId } from "../types/app";
+import type {
+  AppSettings,
+  CalendarView,
+  NavItemId,
+  StatsFilters,
+} from "../types/app";
 import type { Category, Task, TimeBlock } from "../types/domain";
 import type {
   CreateCategoryInput,
@@ -8,8 +13,8 @@ import type {
 } from "../types/plannerApi";
 import TimeBlockDialog from "./calendar/TimeBlockDialog";
 import MonthView from "./calendar/MonthView";
-import YearHeatmap from "./calendar/YearHeatmap";
 import CategoriesView from "./categories/CategoriesView";
+import PomodoroView from "./pomodoro/PomodoroView";
 import SettingsView from "./settings/SettingsView";
 import StatsView from "./stats/StatsView";
 import TasksView from "./tasks/TasksView";
@@ -21,15 +26,17 @@ type MainPanelProps = {
   activeView: CalendarView;
   categories: Category[];
   currentDate: Date;
-  defaultTaskListId: string;
   selectedCalendarCategoryId?: string;
+  selectedStatsDate: Date;
   settings: AppSettings;
   selectedBlockId?: string;
+  selectedBlockIds: string[];
   selectedDate?: Date;
   selectedTaskId?: string;
+  statsFilters: StatsFilters;
   tasks: Task[];
   timeBlocks: TimeBlock[];
-  onSelectBlock: (blockId?: string) => void;
+  onSelectBlock: (blockId?: string, additive?: boolean) => void;
   onSelectTask: (taskId: string) => void;
   onToggleTask: (taskId: string) => void | Promise<void>;
   onPlanSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
@@ -43,6 +50,8 @@ type MainPanelProps = {
   onUpdateTimeBlock: (input: TimeBlock) => void | Promise<void>;
   onShiftCalendarDays: (days: number) => void;
   onSelectDate: (date: Date) => void;
+  onSelectStatsDate: (date: Date) => void;
+  onOpenFocusPage: () => void;
   onUpdateSettings: (settings: AppSettings) => void;
 };
 
@@ -51,12 +60,14 @@ function MainPanel({
   activeView,
   categories,
   currentDate,
-  defaultTaskListId,
   selectedCalendarCategoryId,
+  selectedStatsDate,
   settings,
   selectedBlockId,
+  selectedBlockIds,
   selectedDate,
   selectedTaskId,
+  statsFilters,
   tasks,
   timeBlocks,
   onSelectBlock,
@@ -73,6 +84,8 @@ function MainPanel({
   onUpdateTimeBlock,
   onShiftCalendarDays,
   onSelectDate,
+  onSelectStatsDate,
+  onOpenFocusPage,
   onUpdateSettings,
 }: MainPanelProps) {
   const [isTimeBlockDialogOpen, setIsTimeBlockDialogOpen] = useState(false);
@@ -82,12 +95,19 @@ function MainPanel({
   const view = viewPlaceholders[activeView];
   const isCalendarSurface = activeItem === "calendar";
   const isImplementedCalendarView =
-    isCalendarSurface &&
-    (activeView === "week" || activeView === "month" || activeView === "year");
+    isCalendarSurface && (activeView === "week" || activeView === "month");
+  const getDefaultBlockKind = (categoryId: string) =>
+    categories.find((category) => category.id === categoryId)
+      ?.defaultBlockKind ?? "event";
 
   const openNewTimeBlockDialog = (draftBlock?: CreateTimeBlockInput) => {
     if (draftBlock) {
-      setDraftTimeBlock(draftBlock);
+      setDraftTimeBlock({
+        ...draftBlock,
+        kind: draftBlock.kind ?? getDefaultBlockKind(draftBlock.categoryId),
+        outcome: draftBlock.outcome ?? "active",
+        source: draftBlock.source ?? "manual",
+      });
     } else {
       const startsAt = new Date(currentDate);
       startsAt.setHours(9, 0, 0, 0);
@@ -100,6 +120,9 @@ function MainPanel({
         categoryId: selectedCalendarCategoryId ?? categories[0]?.id ?? "",
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
+        kind: getDefaultBlockKind(selectedCalendarCategoryId ?? categories[0]?.id ?? ""),
+        outcome: "active",
+        source: "manual",
         recurrenceFrequency: "none",
       });
     }
@@ -112,7 +135,7 @@ function MainPanel({
   };
 
   return (
-    <section className="main-panel">
+    <section className={`main-panel${isCalendarSurface ? " calendar-main-panel" : ""}`}>
       <div className="panel-header">
         <div>
           <div className="panel-kicker">{section.kicker}</div>
@@ -133,8 +156,12 @@ function MainPanel({
       {activeItem === "stats" ? (
         <StatsView
           categories={categories}
+          filters={statsFilters}
+          onSelectStatsDate={onSelectStatsDate}
+          selectedStatsDate={selectedStatsDate}
           tasks={tasks}
           timeBlocks={timeBlocks}
+          weekStartDay={settings.weekStartDay}
         />
       ) : activeItem === "settings" ? (
         <SettingsView
@@ -144,7 +171,6 @@ function MainPanel({
       ) : activeItem === "tasks" ? (
         <TasksView
           categories={categories}
-          defaultListId={defaultTaskListId}
           onCreateTask={onCreateTask}
           onUpdateTask={onUpdateTask}
           onDeleteTask={onDeleteTask}
@@ -154,6 +180,16 @@ function MainPanel({
           tasks={tasks}
           timeBlocks={timeBlocks}
           onPlanSession={onPlanSession}
+          onOpenFocusPage={onOpenFocusPage}
+        />
+      ) : activeItem === "pomodoro" ? (
+        <PomodoroView
+          categories={categories}
+          onCompleteSession={onPlanSession}
+          onSelectTask={onSelectTask}
+          selectedTaskId={selectedTaskId}
+          tasks={tasks}
+          timeBlocks={timeBlocks}
         />
       ) : activeItem === "categories" ? (
         <CategoriesView
@@ -163,47 +199,58 @@ function MainPanel({
           onDeleteCategory={onDeleteCategory}
         />
       ) : isImplementedCalendarView ? (
-        activeView === "week" ? (
-          <WeekView
-            blocks={timeBlocks}
-            categories={categories}
-            date={currentDate}
-            defaultCategoryId={selectedCalendarCategoryId ?? categories[0]?.id ?? ""}
-            onSelectBlock={onSelectBlock}
-            onCreateBlockSelection={openNewTimeBlockDialog}
-            onShiftDays={onShiftCalendarDays}
+        <>
+          {categories.length === 0 ? (
+            <div className="empty-state calendar-surface-empty">
+              No visible categories yet. Create a category before adding calendar
+              blocks.
+            </div>
+          ) : timeBlocks.length === 0 ? (
+            <div className="empty-state calendar-surface-empty">
+              No visible time blocks in this view. Add a block or show hidden
+              calendar categories from the inspector.
+            </div>
+          ) : null}
+          {activeView === "week" ? (
+            <WeekView
+              blocks={timeBlocks}
+              categories={categories}
+              date={currentDate}
+              defaultCategoryId={selectedCalendarCategoryId ?? categories[0]?.id ?? ""}
+              onSelectTask={onSelectTask}
+              onSelectBlock={onSelectBlock}
+              onCreateBlockSelection={openNewTimeBlockDialog}
+              onShiftDays={onShiftCalendarDays}
             selectedBlockId={selectedBlockId}
-            visibleEndHour={settings.visibleEndHour}
-            visibleStartHour={settings.visibleStartHour}
-            weekStartDay={settings.weekStartDay}
-            onUpdateBlock={onUpdateTimeBlock}
-          />
-        ) : activeView === "month" ? (
-          <MonthView
-            blocks={timeBlocks}
-            categories={categories}
-            date={currentDate}
-            defaultCategoryId={selectedCalendarCategoryId ?? categories[0]?.id ?? ""}
-            onSelectBlock={onSelectBlock}
-            onCreateBlockSelection={openNewTimeBlockDialog}
-            onSelectDate={onSelectDate}
-            onSelectTask={onSelectTask}
-            selectedBlockId={selectedBlockId}
-            selectedDate={selectedDate}
+            selectedBlockIds={selectedBlockIds}
             selectedTaskId={selectedTaskId}
-            tasks={tasks}
-            weekStartDay={settings.weekStartDay}
-          />
-        ) : (
-          <YearHeatmap
-            categories={categories}
-            date={currentDate}
-            onSelectDate={onSelectDate}
+              tasks={tasks}
+              visibleEndHour={settings.visibleEndHour}
+              visibleStartHour={settings.visibleStartHour}
+              weekStartDay={settings.weekStartDay}
+              onToggleTask={onToggleTask}
+              onUpdateBlock={onUpdateTimeBlock}
+            />
+          ) : activeView === "month" ? (
+            <MonthView
+              blocks={timeBlocks}
+              categories={categories}
+              date={currentDate}
+              defaultCategoryId={selectedCalendarCategoryId ?? categories[0]?.id ?? ""}
+              onSelectBlock={onSelectBlock}
+              onCreateBlockSelection={openNewTimeBlockDialog}
+              onSelectDate={onSelectDate}
+              onSelectTask={onSelectTask}
+              onUpdateBlock={onUpdateTimeBlock}
+            selectedBlockId={selectedBlockId}
+            selectedBlockIds={selectedBlockIds}
             selectedDate={selectedDate}
-            tasks={tasks}
-            timeBlocks={timeBlocks}
-          />
-        )
+              selectedTaskId={selectedTaskId}
+              tasks={tasks}
+              weekStartDay={settings.weekStartDay}
+            />
+          ) : null}
+        </>
       ) : (
         <div className="placeholder-surface">
           <div className="placeholder-card">

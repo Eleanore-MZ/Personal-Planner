@@ -5,9 +5,12 @@ import type {
   RecurrenceFrequency,
   Task,
   TimeBlock,
+  TimeBlockKind,
+  TimeBlockOutcome,
 } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import { isTaskComplete } from "../../utils/tasks";
+import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
 
 type TimeBlockDialogProps = {
   categories: Category[];
@@ -34,6 +37,20 @@ const toTimeInputValue = (date: Date) => {
   return `${hours}:${minutes}`;
 };
 
+const getAllDayEndInputValue = (date: Date) => {
+  const inclusiveEndDate = new Date(date);
+  inclusiveEndDate.setDate(inclusiveEndDate.getDate() - 1);
+  return toDateInputValue(inclusiveEndDate);
+};
+
+const getStartOfDay = (dateValue: string) => new Date(`${dateValue}T00:00:00`);
+
+const getNextDayStart = (dateValue: string) => {
+  const date = getStartOfDay(dateValue);
+  date.setDate(date.getDate() + 1);
+  return date;
+};
+
 const weekdayOptions = [
   { value: 0, label: "Sun" },
   { value: 1, label: "Mon" },
@@ -46,6 +63,30 @@ const weekdayOptions = [
 
 const minimumBlockMinutes = 15;
 
+const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
+  { value: "event", label: "Event" },
+  { value: "task-session", label: "Task" },
+  { value: "habit", label: "Habit" },
+  { value: "routine", label: "Routine" },
+];
+
+const blockOutcomeOptions: Array<{ value: TimeBlockOutcome; label: string }> = [
+  { value: "active", label: "Normal" },
+  { value: "abandoned", label: "Abandoned" },
+];
+
+const sourceLabels: Record<TimeBlock["source"], string> = {
+  manual: "Manual",
+  pomodoro: "Pomodoro",
+  generated: "Generated",
+  imported: "Imported",
+};
+
+const blockKindHelperText: Partial<Record<TimeBlockKind, string>> = {
+  habit: "Use habit blocks for repeatable practice and consistency.",
+  routine: "Use routine blocks for regular life patterns like sleep, meals, and shutdown rituals.",
+};
+
 function TimeBlockDialog({
   categories,
   tasks,
@@ -54,6 +95,7 @@ function TimeBlockDialog({
   onClose,
   onSave,
 }: TimeBlockDialogProps) {
+  const isCreating = !block;
   const formBlock = block ?? initialBlock;
   const startsAt = formBlock ? new Date(formBlock.startsAt) : new Date();
   const endsAt = formBlock ? new Date(formBlock.endsAt) : new Date(startsAt);
@@ -65,17 +107,36 @@ function TimeBlockDialog({
     ? tasks.find((task) => task.id === formBlock.taskId)
     : undefined;
   const openTasks = tasks.filter((task) => !isTaskComplete(task));
+  const initialCategoryId =
+    linkedTask?.categoryId ?? formBlock?.categoryId ?? categories[0]?.id ?? "";
+  const initialCategory = categories.find(
+    (category) => category.id === initialCategoryId,
+  );
 
-  const [title, setTitle] = useState(formBlock?.title ?? "");
+  const [title, setTitle] = useState(
+    isCreating && linkedTask ? linkedTask.title : formBlock?.title ?? "",
+  );
   const [notes, setNotes] = useState(formBlock?.notes ?? "");
-  const [categoryId, setCategoryId] = useState(
-    linkedTask?.categoryId ?? formBlock?.categoryId ?? categories[0]?.id ?? "",
+  const [categoryId, setCategoryId] = useState(initialCategoryId);
+  const [outcome, setOutcome] = useState<TimeBlockOutcome>(
+    formBlock?.outcome ?? "active",
+  );
+  const [kind, setKind] = useState<TimeBlockKind>(
+    formBlock?.kind ?? initialCategory?.defaultBlockKind ?? "event",
+  );
+  const [source] = useState<TimeBlock["source"]>(
+    formBlock?.source ?? "manual",
   );
   const [taskId, setTaskId] = useState(
     linkedTask && !isTaskComplete(linkedTask) ? linkedTask.id : "",
   );
   const [date, setDate] = useState(toDateInputValue(startsAt));
-  const [endDate, setEndDate] = useState(toDateInputValue(endsAt));
+  const [endDate, setEndDate] = useState(
+    formBlock?.isAllDay
+      ? getAllDayEndInputValue(endsAt)
+      : toDateInputValue(endsAt),
+  );
+  const [isAllDay, setIsAllDay] = useState(Boolean(formBlock?.isAllDay));
   const [startTime, setStartTime] = useState(toTimeInputValue(startsAt));
   const [endTime, setEndTime] = useState(toTimeInputValue(endsAt));
   const [recurrenceFrequency, setRecurrenceFrequency] =
@@ -118,21 +179,53 @@ function TimeBlockDialog({
     }
   };
 
+  const handleAllDayChange = (nextIsAllDay: boolean) => {
+    setIsAllDay(nextIsAllDay);
+    if (endDate < date) {
+      setEndDate(date);
+    }
+
+    if (!nextIsAllDay && startTime === "00:00" && endTime === "00:00") {
+      setStartTime("09:00");
+      setEndTime("10:00");
+    }
+  };
+
+  const handleCategoryChange = (nextCategoryId: string) => {
+    setCategoryId(nextCategoryId);
+    if (isCreating) {
+      const nextCategory = categories.find(
+        (category) => category.id === nextCategoryId,
+      );
+      setKind(nextCategory?.defaultBlockKind ?? "event");
+    }
+  };
+
   const handleTaskChange = (nextTaskId: string) => {
     setTaskId(nextTaskId);
     const nextTask = openTasks.find((task) => task.id === nextTaskId);
     if (nextTask) {
-      setCategoryId(nextTask.categoryId);
+      handleCategoryChange(nextTask.categoryId);
+      if (isCreating) {
+        setTitle(nextTask.title);
+      }
     }
   };
 
   const handleSave = async () => {
-    if (!title.trim() || !categoryId) {
+    const selectedTask = openTasks.find((task) => task.id === taskId);
+    const nextTitle = isCreating && selectedTask ? selectedTask.title : title.trim();
+
+    if (!nextTitle || !categoryId) {
       return;
     }
 
-    const nextStartsAt = new Date(`${date}T${startTime}:00`);
-    const nextEndsAt = new Date(`${endDate}T${endTime}:00`);
+    const nextStartsAt = isAllDay
+      ? getStartOfDay(date)
+      : new Date(`${date}T${startTime}:00`);
+    const nextEndsAt = isAllDay
+      ? getNextDayStart(endDate < date ? date : endDate)
+      : new Date(`${endDate}T${endTime}:00`);
     if (nextEndsAt <= nextStartsAt) {
       nextEndsAt.setDate(nextEndsAt.getDate() + 1);
     }
@@ -145,16 +238,18 @@ function TimeBlockDialog({
     const normalizedInterval = Math.max(1, Number.parseInt(recurrenceInterval, 10) || 1);
     const normalizedCount = Math.max(1, Number.parseInt(recurrenceCount, 10) || 1);
     const isRepeating = recurrenceFrequency !== "none";
-    const selectedTask = openTasks.find((task) => task.id === taskId);
-
     await onSave({
       id: block?.id,
-      title: title.trim(),
+      title: nextTitle,
       notes,
       categoryId: selectedTask?.categoryId ?? categoryId,
       taskId: taskId || undefined,
       startsAt: nextStartsAt.toISOString(),
       endsAt: nextEndsAt.toISOString(),
+      outcome,
+      kind,
+      source,
+      isAllDay,
       recurrenceFrequency,
       recurrenceInterval: isRepeating ? normalizedInterval : undefined,
       recurrenceWeekdays:
@@ -199,7 +294,7 @@ function TimeBlockDialog({
           <label>
             <span>Category</span>
             <select
-              onChange={(event) => setCategoryId(event.target.value)}
+              onChange={(event) => handleCategoryChange(event.target.value)}
               value={categoryId}
             >
               {categories.map((category) => (
@@ -209,6 +304,43 @@ function TimeBlockDialog({
               ))}
             </select>
           </label>
+          <div className="dialog-field">
+            <span>Kind</span>
+            <SegmentedControl
+              ariaLabel="Time block kind"
+              compact
+              onChange={setKind}
+              options={blockKindOptions}
+              value={kind}
+            />
+            {blockKindHelperText[kind] ? (
+              <small className="field-helper-text">
+                {blockKindHelperText[kind]}
+              </small>
+            ) : null}
+          </div>
+          <div className="dialog-field">
+            <span>Outcome</span>
+            <SegmentedControl
+              ariaLabel="Time block outcome"
+              compact
+              onChange={setOutcome}
+              options={blockOutcomeOptions}
+              value={outcome}
+            />
+          </div>
+          <label>
+            <span>Source</span>
+            <input readOnly value={sourceLabels[source]} />
+          </label>
+          <div className="dialog-field">
+            <span>All-day</span>
+            <ToggleRow
+              checked={isAllDay}
+              label="Show in the all-day row"
+              onChange={handleAllDayChange}
+            />
+          </div>
           <label>
             <span>Date</span>
             <input
@@ -228,6 +360,7 @@ function TimeBlockDialog({
           <label>
             <span>Start</span>
             <input
+              disabled={isAllDay}
               onChange={(event) => setStartTime(event.target.value)}
               step={minimumBlockMinutes * 60}
               type="time"
@@ -237,6 +370,7 @@ function TimeBlockDialog({
           <label>
             <span>End</span>
             <input
+              disabled={isAllDay}
               onChange={(event) => setEndTime(event.target.value)}
               step={minimumBlockMinutes * 60}
               type="time"

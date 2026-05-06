@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Category, Subtask, Task, TimeBlock } from "../../types/domain";
 import { formatDateTimeRange } from "../../utils/date";
+import { isAllDayBlock } from "../../utils/calendar";
 import {
   formatMinutes,
   getTaskPlannedMinutes,
 } from "../../utils/tasks";
+import { SegmentedControl } from "../ui/ChoiceControls";
 
 type TaskDetailProps = {
   categories: Category[];
@@ -13,6 +15,7 @@ type TaskDetailProps = {
   onDeleteTask: (taskId: string) => void | Promise<void>;
   onUpdateTask: (input: Task) => void | Promise<void>;
   onPlanSession: () => void;
+  onOpenFocusPage: () => void;
 };
 
 const toDateInputValue = (date?: string) => (date ? date.slice(0, 10) : "");
@@ -25,6 +28,20 @@ const createSubtaskId = () => {
   return `subtask-${Date.now().toString(36)}`;
 };
 
+const taskStatusOptions: Array<{ value: Task["status"]; label: string }> = [
+  { value: "todo", label: "Todo" },
+  { value: "in-progress", label: "In progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
+  { value: "canceled", label: "Canceled" },
+];
+
+const taskPriorityOptions: Array<{ value: Task["priority"]; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 function TaskDetail({
   categories,
   task,
@@ -32,17 +49,16 @@ function TaskDetail({
   onDeleteTask,
   onUpdateTask,
   onPlanSession,
+  onOpenFocusPage,
 }: TaskDetailProps) {
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [estimatedMinutes, setEstimatedMinutes] = useState("60");
   const [dueDate, setDueDate] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
   useEffect(() => {
     setTitle(task?.title ?? "");
     setNotes(task?.notes ?? "");
-    setEstimatedMinutes(`${task?.estimatedMinutes ?? 60}`);
     setDueDate(toDateInputValue(task?.dueDate));
     setNewSubtaskTitle("");
   }, [task]);
@@ -59,7 +75,6 @@ function TaskDetail({
     (block) => block.taskId === task.id || block.id === task.plannedTimeBlockId,
   );
   const plannedMinutes = getTaskPlannedMinutes(task, timeBlocks);
-  const remainingMinutes = Math.max(task.estimatedMinutes - plannedMinutes, 0);
   const updateTask = (input: Partial<Task>) => {
     void onUpdateTask({ ...task, ...input });
   };
@@ -82,14 +97,6 @@ function TaskDetail({
   const commitNotes = () => {
     if (notes !== task.notes) {
       updateTask({ notes });
-    }
-  };
-
-  const commitEstimatedMinutes = () => {
-    const nextEstimate = Math.max(0, Number.parseInt(estimatedMinutes, 10) || 0);
-    setEstimatedMinutes(`${nextEstimate}`);
-    if (nextEstimate !== task.estimatedMinutes) {
-      updateTask({ estimatedMinutes: nextEstimate });
     }
   };
 
@@ -157,6 +164,13 @@ function TaskDetail({
         <div className="task-detail-actions">
           <button
             className="toolbar-button primary-action"
+            onClick={onOpenFocusPage}
+            type="button"
+          >
+            Start Focus
+          </button>
+          <button
+            className="toolbar-button"
             onClick={onPlanSession}
             type="button"
           >
@@ -172,60 +186,26 @@ function TaskDetail({
         </div>
       </div>
 
-      <label className="task-detail-notes-field">
-        <span>Notes</span>
-        <textarea
-          onBlur={commitNotes}
-          onChange={(event) => setNotes(event.target.value)}
-          rows={4}
-          value={notes}
-        />
-      </label>
-
       <div className="task-detail-grid">
         <div className="info-row compact">
-          <span>Estimated</span>
-          <input
-            min={0}
-            onBlur={commitEstimatedMinutes}
-            onChange={(event) => setEstimatedMinutes(event.target.value)}
-            type="number"
-            value={estimatedMinutes}
+          <span>Status</span>
+          <SegmentedControl
+            ariaLabel="Task status"
+            compact
+            onChange={(status) => updateTask({ status })}
+            options={taskStatusOptions}
+            value={task.status}
           />
         </div>
         <div className="info-row compact">
-          <span>Planned</span>
-          <strong>{formatMinutes(plannedMinutes)}</strong>
-        </div>
-        <div className="info-row compact">
-          <span>Remaining</span>
-          <strong>{formatMinutes(remainingMinutes)}</strong>
-        </div>
-        <div className="info-row compact">
-          <span>Status</span>
-          <select
-            onChange={(event) =>
-              updateTask({ status: event.target.value as Task["status"] })
-            }
-            value={task.status}
-          >
-            <option value="todo">To do</option>
-            <option value="in-progress">In progress</option>
-            <option value="done">Done</option>
-          </select>
-        </div>
-        <div className="info-row compact">
           <span>Priority</span>
-          <select
-            onChange={(event) =>
-              updateTask({ priority: event.target.value as Task["priority"] })
-            }
+          <SegmentedControl
+            ariaLabel="Task priority"
+            compact
+            onChange={(priority) => updateTask({ priority })}
+            options={taskPriorityOptions}
             value={task.priority}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
+          />
         </div>
         <div className="info-row compact">
           <span>Due</span>
@@ -248,7 +228,31 @@ function TaskDetail({
             ))}
           </select>
         </div>
+        <div className="info-row compact">
+          <span>Planned time</span>
+          <strong>{formatMinutes(plannedMinutes)}</strong>
+        </div>
       </div>
+
+      <section className="task-detail-section">
+        <h3>Planned time blocks</h3>
+        {plannedSessions.length > 0 ? (
+          <div className="planned-session-list">
+            {plannedSessions.map((session) => (
+              <div className="planned-session" key={session.id}>
+                <strong>{session.title}</strong>
+                <span>
+                  {isAllDayBlock(session)
+                    ? "All day"
+                    : formatDateTimeRange(session.startsAt, session.endsAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">No linked time blocks yet.</div>
+        )}
+      </section>
 
       <section className="task-detail-section">
         <div className="task-detail-section-header">
@@ -318,21 +322,15 @@ function TaskDetail({
         )}
       </section>
 
-      <section className="task-detail-section">
-        <h3>Planned sessions</h3>
-        {plannedSessions.length > 0 ? (
-          <div className="planned-session-list">
-            {plannedSessions.map((session) => (
-              <div className="planned-session" key={session.id}>
-                <strong>{session.title}</strong>
-                <span>{formatDateTimeRange(session.startsAt, session.endsAt)}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">No planned sessions linked.</div>
-        )}
-      </section>
+      <label className="task-detail-notes-field">
+        <span>Notes</span>
+        <textarea
+          onBlur={commitNotes}
+          onChange={(event) => setNotes(event.target.value)}
+          rows={4}
+          value={notes}
+        />
+      </label>
     </aside>
   );
 }

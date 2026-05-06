@@ -21,10 +21,6 @@ const monthTitleFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-const yearTitleFormatter = new Intl.DateTimeFormat("en-US", {
-  year: "numeric",
-});
-
 export const categoryColorValues = {
   cyan: {
     accent: "#22d3ee",
@@ -172,11 +168,37 @@ export function isSameCalendarDay(firstDate: Date, secondDate: Date) {
   return startOfDay(firstDate).getTime() === startOfDay(secondDate).getTime();
 }
 
+export function isAllDayBlock(block: TimeBlock) {
+  return Boolean(block.isAllDay);
+}
+
+export function getAllDayEndDate(block: TimeBlock) {
+  const startsAt = startOfDay(new Date(block.startsAt));
+  const endsAt = startOfDay(new Date(block.endsAt));
+  return endsAt <= startsAt ? addCalendarDays(startsAt, 1) : endsAt;
+}
+
+export function doesBlockOverlapDay(block: TimeBlock, date: Date) {
+  const dayStart = startOfDay(date);
+  const nextDay = addCalendarDays(dayStart, 1);
+  const startsAt = isAllDayBlock(block)
+    ? startOfDay(new Date(block.startsAt))
+    : new Date(block.startsAt);
+  const endsAt = isAllDayBlock(block)
+    ? getAllDayEndDate(block)
+    : new Date(block.endsAt);
+  return endsAt > dayStart && startsAt < nextDay;
+}
+
 export function getBlocksForDay(blocks: TimeBlock[], date: Date) {
   const dayStart = startOfDay(date);
   const nextDay = addCalendarDays(dayStart, 1);
 
   return blocks.flatMap((block) => {
+    if (isAllDayBlock(block)) {
+      return doesBlockOverlapDay(block, date) ? [block] : [];
+    }
+
     const startsAt = new Date(block.startsAt);
     const endsAt = new Date(block.endsAt);
     if (endsAt <= dayStart || startsAt >= nextDay) {
@@ -415,10 +437,6 @@ export function formatCalendarTitle(date: Date, view: string) {
     const firstDay = weekDays[0];
     const lastDay = weekDays[6];
     return `${dateTitleFormatter.format(firstDay)} - ${dateTitleFormatter.format(lastDay)}`;
-  }
-
-  if (view === "year") {
-    return yearTitleFormatter.format(date);
   }
 
   return monthTitleFormatter.format(date);

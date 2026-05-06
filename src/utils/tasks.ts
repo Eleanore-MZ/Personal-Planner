@@ -1,5 +1,5 @@
 import type { Category, Task, TimeBlock } from "../types/domain";
-import { startOfDay, addCalendarDays } from "./calendar";
+import { startOfDay, addCalendarDays, isAllDayBlock } from "./calendar";
 import { formatDate } from "./date";
 
 export type DueGroupId =
@@ -79,6 +79,10 @@ export function getTaskPlannedMinutes(task: Task, timeBlocks: TimeBlock[]) {
       (block) => block.taskId === task.id || block.id === task.plannedTimeBlockId,
     )
     .reduce((totalMinutes, block) => {
+      if (isAllDayBlock(block)) {
+        return totalMinutes;
+      }
+
       const startsAt = new Date(block.startsAt).getTime();
       const endsAt = new Date(block.endsAt).getTime();
       return totalMinutes + Math.max((endsAt - startsAt) / 60000, 0);

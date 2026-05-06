@@ -20,51 +20,46 @@ const sampleCategories = [
     id: "cat-work",
     name: "Work",
     color: "cyan",
-    description: "Focused project work and meetings."
+    description: "Focused project work and meetings.",
+    defaultBlockKind: "event",
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-personal",
     name: "Personal",
     color: "green",
-    description: "Home, errands, and life admin."
+    description: "Home, errands, and life admin.",
+    defaultBlockKind: "event",
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-health",
     name: "Health",
     color: "pink",
-    description: "Exercise, meals, and recovery routines."
+    description: "Exercise, meals, and recovery routines.",
+    defaultBlockKind: "event",
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-learning",
     name: "Learning",
     color: "purple",
-    description: "Classes, reading, and skill practice."
+    description: "Classes, reading, and skill practice.",
+    defaultBlockKind: "event",
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-finance",
     name: "Finance",
     color: "yellow",
-    description: "Bills, budgets, and planning."
-  }
-];
-const sampleTaskLists = [
-  {
-    id: "list-projects",
-    name: "Projects",
-    description: "Planned work for active projects.",
-    categoryId: "cat-work"
-  },
-  {
-    id: "list-personal",
-    name: "Personal Admin",
-    description: "Small but important life tasks.",
-    categoryId: "cat-personal"
-  },
-  {
-    id: "list-learning",
-    name: "Learning Queue",
-    description: "Study sessions and course follow-ups.",
-    categoryId: "cat-learning"
+    description: "Bills, budgets, and planning.",
+    defaultBlockKind: "event",
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   }
 ];
 const sampleTimeBlocks = [
@@ -75,7 +70,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-work",
     taskId: "task-plan-week",
     startsAt: toIso(atTime(today, 9)),
-    endsAt: toIso(atTime(today, 10))
+    endsAt: toIso(atTime(today, 10)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-email",
@@ -84,7 +82,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-work",
     taskId: "task-send-proposal",
     startsAt: toIso(atTime(today, 10, 30)),
-    endsAt: toIso(atTime(today, 11))
+    endsAt: toIso(atTime(today, 11)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-design-review",
@@ -93,7 +94,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-work",
     taskId: "task-review-shell",
     startsAt: toIso(atTime(addDays(today, 1), 13)),
-    endsAt: toIso(atTime(addDays(today, 1), 14, 30))
+    endsAt: toIso(atTime(addDays(today, 1), 14, 30)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-grocery",
@@ -102,7 +106,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-personal",
     taskId: "task-grocery-list",
     startsAt: toIso(atTime(addDays(today, 1), 17, 30)),
-    endsAt: toIso(atTime(addDays(today, 1), 18, 15))
+    endsAt: toIso(atTime(addDays(today, 1), 18, 15)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-workout",
@@ -110,7 +117,10 @@ const sampleTimeBlocks = [
     notes: "Light cardio and mobility.",
     categoryId: "cat-health",
     startsAt: toIso(atTime(addDays(today, 2), 7)),
-    endsAt: toIso(atTime(addDays(today, 2), 7, 45))
+    endsAt: toIso(atTime(addDays(today, 2), 7, 45)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-reading",
@@ -119,7 +129,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-learning",
     taskId: "task-read-typescript",
     startsAt: toIso(atTime(addDays(today, 3), 19)),
-    endsAt: toIso(atTime(addDays(today, 3), 20))
+    endsAt: toIso(atTime(addDays(today, 3), 20)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-budget",
@@ -128,7 +141,10 @@ const sampleTimeBlocks = [
     categoryId: "cat-finance",
     taskId: "task-budget-review",
     startsAt: toIso(atTime(addDays(today, 5), 11)),
-    endsAt: toIso(atTime(addDays(today, 5), 12))
+    endsAt: toIso(atTime(addDays(today, 5), 12)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   },
   {
     id: "block-catchup",
@@ -136,7 +152,10 @@ const sampleTimeBlocks = [
     notes: "Flexible time for overflow items.",
     categoryId: "cat-personal",
     startsAt: toIso(atTime(addDays(today, 6), 15)),
-    endsAt: toIso(atTime(addDays(today, 6), 16))
+    endsAt: toIso(atTime(addDays(today, 6), 16)),
+    outcome: "active",
+    kind: "event",
+    source: "manual"
   }
 ];
 const sampleTasks = [
@@ -144,22 +163,18 @@ const sampleTasks = [
     id: "task-renew-license",
     title: "Renew software license",
     notes: "Overdue administrative item for the project toolkit.",
-    listId: "list-projects",
     categoryId: "cat-work",
     status: "todo",
     priority: "high",
-    estimatedMinutes: 45,
     dueDate: toIso(addDays(today, -2))
   },
   {
     id: "task-plan-week",
     title: "Plan the week",
     notes: "Due today and linked to the first planned block.",
-    listId: "list-projects",
     categoryId: "cat-work",
     status: "in-progress",
     priority: "high",
-    estimatedMinutes: 120,
     dueDate: toIso(today),
     plannedTimeBlockId: "block-week-planning",
     subtasks: [
@@ -172,11 +187,9 @@ const sampleTasks = [
     id: "task-grocery-list",
     title: "Make grocery list",
     notes: "Capture ingredients before the planned store run.",
-    listId: "list-personal",
     categoryId: "cat-personal",
     status: "todo",
     priority: "medium",
-    estimatedMinutes: 45,
     dueDate: toIso(addDays(today, 1)),
     plannedTimeBlockId: "block-grocery",
     subtasks: [
@@ -187,11 +200,9 @@ const sampleTasks = [
     id: "task-review-shell",
     title: "Review app shell notes",
     notes: "Due in a few days as preparation for the next UI phase.",
-    listId: "list-projects",
     categoryId: "cat-work",
     status: "todo",
     priority: "medium",
-    estimatedMinutes: 90,
     dueDate: toIso(addDays(today, 3)),
     plannedTimeBlockId: "block-design-review"
   },
@@ -199,11 +210,9 @@ const sampleTasks = [
     id: "task-read-typescript",
     title: "Read TypeScript domain modeling chapter",
     notes: "Learning task tied to a reading block.",
-    listId: "list-learning",
     categoryId: "cat-learning",
     status: "todo",
     priority: "low",
-    estimatedMinutes: 60,
     dueDate: toIso(addDays(today, 4)),
     plannedTimeBlockId: "block-reading"
   },
@@ -211,11 +220,9 @@ const sampleTasks = [
     id: "task-budget-review",
     title: "Review monthly budget",
     notes: "Finance check-in due later this week.",
-    listId: "list-personal",
     categoryId: "cat-finance",
     status: "todo",
     priority: "medium",
-    estimatedMinutes: 60,
     dueDate: toIso(addDays(today, 7)),
     plannedTimeBlockId: "block-budget"
   },
@@ -223,11 +230,9 @@ const sampleTasks = [
     id: "task-send-proposal",
     title: "Send proposal follow-up",
     notes: "Short email follow-up after inbox triage.",
-    listId: "list-projects",
     categoryId: "cat-work",
     status: "todo",
     priority: "high",
-    estimatedMinutes: 30,
     dueDate: toIso(addDays(today, 2)),
     plannedTimeBlockId: "block-email"
   },
@@ -235,22 +240,18 @@ const sampleTasks = [
     id: "task-backup-files",
     title: "Back up planner notes",
     notes: "Later task for a local data hygiene pass.",
-    listId: "list-personal",
     categoryId: "cat-personal",
     status: "todo",
     priority: "low",
-    estimatedMinutes: 75,
     dueDate: toIso(addDays(today, 14))
   },
   {
     id: "task-capture-ideas",
     title: "Capture planner improvement ideas",
     notes: "Unscheduled ideas for future planner iterations.",
-    listId: "list-personal",
     categoryId: "cat-personal",
     status: "todo",
-    priority: "low",
-    estimatedMinutes: 30
+    priority: "low"
   }
 ];
 let db;
@@ -286,6 +287,24 @@ const parseRecurrenceExceptions = (value) => {
 };
 const serializeRecurrenceExceptions = (exceptions) => exceptions && exceptions.length > 0 ? JSON.stringify([...new Set(exceptions)].sort()) : null;
 const normalizeRecurrenceEndMode = (mode, endDate) => mode === "never" && endDate ? "on" : mode ?? (endDate ? "on" : "never");
+const timeBlockOutcomes = ["active", "abandoned"];
+const timeBlockKinds = ["event", "task-session", "habit", "routine"];
+const timeBlockSources = ["manual", "pomodoro", "generated", "imported"];
+const mapStatusToOutcome = (status) => {
+  if (status === "skipped" || status === "canceled") {
+    return "abandoned";
+  }
+  return "active";
+};
+const mapOutcomeToStatus = (outcome) => {
+  if (outcome === "abandoned") {
+    return "skipped";
+  }
+  return "planned";
+};
+const normalizeTimeBlockOutcome = (outcome, legacyStatus) => outcome && timeBlockOutcomes.includes(outcome) ? outcome : mapStatusToOutcome(legacyStatus);
+const normalizeTimeBlockKind = (kind) => kind && timeBlockKinds.includes(kind) ? kind : "event";
+const normalizeTimeBlockSource = (source) => source && timeBlockSources.includes(source) ? source : "manual";
 function initializePlannerDatabase() {
   const databasePath = path.join(app.getPath("userData"), "planner.sqlite3");
   db = new Database(databasePath);
@@ -305,29 +324,21 @@ function createSchema(database) {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       color TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT ''
-    );
-
-    CREATE TABLE IF NOT EXISTS task_lists (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
-      category_id TEXT NOT NULL,
-      FOREIGN KEY (category_id) REFERENCES categories(id)
+      default_block_kind TEXT NOT NULL DEFAULT 'event',
+      hidden_from_calendar INTEGER NOT NULL DEFAULT 0,
+      include_in_stats_by_default INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       notes TEXT NOT NULL DEFAULT '',
-      list_id TEXT NOT NULL,
       category_id TEXT NOT NULL,
       status TEXT NOT NULL,
       priority TEXT NOT NULL,
-      estimated_minutes INTEGER NOT NULL DEFAULT 60,
       due_date TEXT,
       planned_time_block_id TEXT,
-      FOREIGN KEY (list_id) REFERENCES task_lists(id),
       FOREIGN KEY (category_id) REFERENCES categories(id)
     );
 
@@ -347,6 +358,11 @@ function createSchema(database) {
       task_id TEXT,
       starts_at TEXT NOT NULL,
       ends_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'planned',
+      outcome TEXT NOT NULL DEFAULT 'active',
+      kind TEXT NOT NULL DEFAULT 'event',
+      source TEXT NOT NULL DEFAULT 'manual',
+      is_all_day INTEGER NOT NULL DEFAULT 0,
       recurrence_frequency TEXT NOT NULL DEFAULT 'none',
       recurrence_interval INTEGER NOT NULL DEFAULT 1,
       recurrence_weekdays TEXT,
@@ -358,29 +374,117 @@ function createSchema(database) {
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
   `);
+  const categoryColumns = database.prepare("PRAGMA table_info(categories)").all();
+  const categoryColumnNames = new Set(categoryColumns.map((column) => column.name));
+  if (!categoryColumnNames.has("default_block_kind")) {
+    database.prepare("ALTER TABLE categories ADD COLUMN default_block_kind TEXT NOT NULL DEFAULT 'event'").run();
+  }
+  if (!categoryColumnNames.has("hidden_from_calendar")) {
+    database.prepare("ALTER TABLE categories ADD COLUMN hidden_from_calendar INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!categoryColumnNames.has("include_in_stats_by_default")) {
+    database.prepare(
+      "ALTER TABLE categories ADD COLUMN include_in_stats_by_default INTEGER NOT NULL DEFAULT 1"
+    ).run();
+  }
+  const taskColumns = database.prepare("PRAGMA table_info(tasks)").all();
+  const taskColumnNames = new Set(taskColumns.map((column) => column.name));
+  database.exec("DROP TABLE IF EXISTS tasks_without_lists");
+  database.exec("DROP TABLE IF EXISTS tasks_without_estimates");
+  if (taskColumnNames.has("list_id") || taskColumnNames.has("estimated_minutes")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+
+      CREATE TABLE tasks_without_estimates (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        category_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        due_date TEXT,
+        planned_time_block_id TEXT,
+        FOREIGN KEY (category_id) REFERENCES categories(id)
+      );
+
+      INSERT INTO tasks_without_estimates (
+        id, title, notes, category_id, status, priority,
+        due_date, planned_time_block_id
+      )
+      SELECT
+        id, title, notes, category_id, status, priority,
+        due_date, planned_time_block_id
+      FROM tasks;
+
+      DROP TABLE tasks;
+      ALTER TABLE tasks_without_estimates RENAME TO tasks;
+
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+  database.exec("DROP TABLE IF EXISTS task_lists");
   const timeBlockColumns = database.prepare("PRAGMA table_info(time_blocks)").all();
-  const columnNames = new Set(timeBlockColumns.map((column) => column.name));
-  if (!columnNames.has("recurrence_frequency")) {
+  const timeBlockColumnNames = new Set(timeBlockColumns.map((column) => column.name));
+  if (!timeBlockColumnNames.has("status")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'").run();
+  }
+  if (!timeBlockColumnNames.has("outcome")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN outcome TEXT NOT NULL DEFAULT 'active'").run();
+    database.prepare(
+      `UPDATE time_blocks
+         SET outcome = CASE status
+           WHEN 'skipped' THEN 'abandoned'
+           WHEN 'canceled' THEN 'abandoned'
+           ELSE 'active'
+         END`
+    ).run();
+  } else {
+    database.prepare(
+      `UPDATE time_blocks
+         SET outcome = CASE status
+           WHEN 'skipped' THEN 'abandoned'
+           WHEN 'canceled' THEN 'abandoned'
+           ELSE 'active'
+         END
+         WHERE outcome IS NULL
+            OR outcome NOT IN ('active', 'abandoned')`
+    ).run();
+  }
+  database.prepare(
+    `UPDATE time_blocks
+       SET outcome = 'active'
+       WHERE outcome IN ('scheduled', 'recorded')`
+  ).run();
+  if (!timeBlockColumnNames.has("kind")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN kind TEXT NOT NULL DEFAULT 'event'").run();
+  }
+  if (!timeBlockColumnNames.has("source")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_frequency")) {
     database.prepare(
       "ALTER TABLE time_blocks ADD COLUMN recurrence_frequency TEXT NOT NULL DEFAULT 'none'"
     ).run();
   }
-  if (!columnNames.has("recurrence_end_date")) {
+  if (!timeBlockColumnNames.has("is_all_day")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN is_all_day INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_end_date")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_date TEXT").run();
   }
-  if (!columnNames.has("recurrence_interval")) {
+  if (!timeBlockColumnNames.has("recurrence_interval")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_interval INTEGER NOT NULL DEFAULT 1").run();
   }
-  if (!columnNames.has("recurrence_weekdays")) {
+  if (!timeBlockColumnNames.has("recurrence_weekdays")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_weekdays TEXT").run();
   }
-  if (!columnNames.has("recurrence_end_mode")) {
+  if (!timeBlockColumnNames.has("recurrence_end_mode")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_mode TEXT NOT NULL DEFAULT 'never'").run();
   }
-  if (!columnNames.has("recurrence_count")) {
+  if (!timeBlockColumnNames.has("recurrence_count")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_count INTEGER").run();
   }
-  if (!columnNames.has("recurrence_exceptions")) {
+  if (!timeBlockColumnNames.has("recurrence_exceptions")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT").run();
   }
 }
@@ -390,21 +494,23 @@ function seedDefaults(database) {
     return;
   }
   const insertCategory = database.prepare(`
-    INSERT INTO categories (id, name, color, description)
-    VALUES (@id, @name, @color, @description)
-  `);
-  const insertTaskList = database.prepare(`
-    INSERT INTO task_lists (id, name, description, category_id)
-    VALUES (@id, @name, @description, @categoryId)
+    INSERT INTO categories (
+      id, name, color, description, default_block_kind,
+      hidden_from_calendar, include_in_stats_by_default
+    )
+    VALUES (
+      @id, @name, @color, @description, @defaultBlockKind,
+      @hiddenFromCalendar, @includeInStatsByDefault
+    )
   `);
   const insertTask = database.prepare(`
     INSERT INTO tasks (
-      id, title, notes, list_id, category_id, status, priority,
-      estimated_minutes, due_date, planned_time_block_id
+      id, title, notes, category_id, status, priority,
+      due_date, planned_time_block_id
     )
     VALUES (
-      @id, @title, @notes, @listId, @categoryId, @status, @priority,
-      @estimatedMinutes, @dueDate, @plannedTimeBlockId
+      @id, @title, @notes, @categoryId, @status, @priority,
+      @dueDate, @plannedTimeBlockId
     )
   `);
   const insertSubtask = database.prepare(`
@@ -414,20 +520,28 @@ function seedDefaults(database) {
   const insertTimeBlock = database.prepare(`
     INSERT INTO time_blocks (
       id, title, notes, category_id, task_id, starts_at, ends_at,
+      status, outcome, kind, source, is_all_day,
       recurrence_frequency, recurrence_interval, recurrence_weekdays,
       recurrence_end_mode, recurrence_end_date, recurrence_count,
       recurrence_exceptions
     )
     VALUES (
       @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
+      @status, @outcome, @kind, @source, @isAllDay,
       @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
       @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
       @recurrenceExceptions
     )
   `);
   const seed = database.transaction(() => {
-    sampleCategories.forEach((category) => insertCategory.run(category));
-    sampleTaskLists.forEach((taskList) => insertTaskList.run(taskList));
+    sampleCategories.forEach(
+      (category) => insertCategory.run({
+        ...category,
+        defaultBlockKind: normalizeTimeBlockKind(category.defaultBlockKind),
+        hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+        includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
+      })
+    );
     sampleTasks.forEach((task) => {
       var _a;
       insertTask.run({
@@ -447,6 +561,11 @@ function seedDefaults(database) {
       (block) => insertTimeBlock.run({
         ...block,
         taskId: block.taskId ?? null,
+        outcome: normalizeTimeBlockOutcome(block.outcome, block.status),
+        status: mapOutcomeToStatus(normalizeTimeBlockOutcome(block.outcome, block.status)),
+        kind: normalizeTimeBlockKind(block.kind),
+        source: normalizeTimeBlockSource(block.source),
+        isAllDay: block.isAllDay ? 1 : 0,
         recurrenceFrequency: block.recurrenceFrequency ?? "none",
         recurrenceInterval: block.recurrenceInterval ?? 1,
         recurrenceWeekdays: serializeRecurrenceWeekdays(block.recurrenceWeekdays),
@@ -462,7 +581,6 @@ function seedDefaults(database) {
 function getPlannerSnapshot() {
   return {
     categories: getCategories(),
-    taskLists: getTaskLists(),
     tasks: getTasks(),
     timeBlocks: getTimeBlocks()
   };
@@ -473,24 +591,60 @@ function getCategories() {
     id: row.id,
     name: row.name,
     color: row.color,
-    description: row.description
+    description: row.description,
+    defaultBlockKind: normalizeTimeBlockKind(row.default_block_kind),
+    hiddenFromCalendar: Boolean(row.hidden_from_calendar),
+    includeInStatsByDefault: row.include_in_stats_by_default !== 0
   }));
 }
 function createCategory(input) {
   const category = {
     id: createId("cat"),
-    ...input
+    name: input.name,
+    color: input.color,
+    description: input.description,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true
   };
   getDb().prepare(
-    "INSERT INTO categories (id, name, color, description) VALUES (@id, @name, @color, @description)"
-  ).run(category);
+    `INSERT INTO categories (
+        id, name, color, description, default_block_kind,
+        hidden_from_calendar, include_in_stats_by_default
+      )
+      VALUES (
+        @id, @name, @color, @description, @defaultBlockKind,
+        @hiddenFromCalendar, @includeInStatsByDefault
+      )`
+  ).run({
+    ...category,
+    hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+    includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
+  });
   return category;
 }
 function updateCategory(input) {
+  const category = {
+    ...input,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true
+  };
   getDb().prepare(
-    "UPDATE categories SET name = @name, color = @color, description = @description WHERE id = @id"
-  ).run(input);
-  return input;
+    `UPDATE categories
+       SET name = @name,
+           color = @color,
+           description = @description,
+           default_block_kind = @defaultBlockKind,
+           hidden_from_calendar = @hiddenFromCalendar,
+           include_in_stats_by_default = @includeInStatsByDefault
+       WHERE id = @id`
+  ).run({
+    ...category,
+    hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+    includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
+  });
+  return category;
 }
 function deleteCategory(categoryId) {
   const database = getDb();
@@ -499,9 +653,6 @@ function deleteCategory(categoryId) {
     throw new Error("Cannot delete the only category. Create another category first.");
   }
   const remove = database.transaction(() => {
-    database.prepare(
-      "UPDATE task_lists SET category_id = @fallbackCategoryId WHERE category_id = @categoryId"
-    ).run({ categoryId, fallbackCategoryId: fallbackCategory.id });
     database.prepare(
       "UPDATE tasks SET category_id = @fallbackCategoryId WHERE category_id = @categoryId"
     ).run({ categoryId, fallbackCategoryId: fallbackCategory.id });
@@ -512,15 +663,6 @@ function deleteCategory(categoryId) {
   });
   remove();
   return categoryId;
-}
-function getTaskLists() {
-  const rows = getDb().prepare("SELECT * FROM task_lists ORDER BY name").all();
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    categoryId: row.category_id
-  }));
 }
 function getTasks() {
   const taskRows = getDb().prepare("SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, title").all();
@@ -535,11 +677,9 @@ function getTasks() {
       id: row.id,
       title: row.title,
       notes: row.notes,
-      listId: row.list_id,
       categoryId: row.category_id,
       status: row.status,
       priority: row.priority,
-      estimatedMinutes: row.estimated_minutes,
       dueDate: row.due_date ?? void 0,
       plannedTimeBlockId: row.planned_time_block_id ?? void 0,
       subtasks: subtasks.length > 0 ? subtasks : void 0
@@ -556,12 +696,12 @@ function createTask(input) {
     var _a;
     database.prepare(`
         INSERT INTO tasks (
-          id, title, notes, list_id, category_id, status, priority,
-          estimated_minutes, due_date, planned_time_block_id
+          id, title, notes, category_id, status, priority,
+          due_date, planned_time_block_id
         )
         VALUES (
-          @id, @title, @notes, @listId, @categoryId, @status, @priority,
-          @estimatedMinutes, @dueDate, @plannedTimeBlockId
+          @id, @title, @notes, @categoryId, @status, @priority,
+          @dueDate, @plannedTimeBlockId
         )
       `).run({
       ...task,
@@ -589,11 +729,9 @@ function updateTask(input) {
         UPDATE tasks
         SET title = @title,
             notes = @notes,
-            list_id = @listId,
             category_id = @categoryId,
             status = @status,
             priority = @priority,
-            estimated_minutes = @estimatedMinutes,
             due_date = @dueDate,
             planned_time_block_id = @plannedTimeBlockId
         WHERE id = @id
@@ -640,6 +778,10 @@ function getTimeBlocks() {
     taskId: row.task_id ?? void 0,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
+    outcome: normalizeTimeBlockOutcome(row.outcome, row.status),
+    kind: normalizeTimeBlockKind(row.kind),
+    source: normalizeTimeBlockSource(row.source),
+    isAllDay: Boolean(row.is_all_day),
     recurrenceFrequency: row.recurrence_frequency ?? "none",
     recurrenceInterval: row.recurrence_interval ?? 1,
     recurrenceWeekdays: parseRecurrenceWeekdays(row.recurrence_weekdays),
@@ -661,6 +803,10 @@ function createTimeBlock(input) {
     taskId: input.taskId,
     startsAt: input.startsAt,
     endsAt: input.endsAt,
+    outcome: normalizeTimeBlockOutcome(input.outcome),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+    isAllDay: input.isAllDay,
     recurrenceFrequency: input.recurrenceFrequency ?? "none",
     recurrenceInterval: input.recurrenceInterval ?? 1,
     recurrenceWeekdays: input.recurrenceWeekdays,
@@ -672,12 +818,14 @@ function createTimeBlock(input) {
   getDb().prepare(`
       INSERT INTO time_blocks (
         id, title, notes, category_id, task_id, starts_at, ends_at,
+        status, outcome, kind, source, is_all_day,
         recurrence_frequency, recurrence_interval, recurrence_weekdays,
         recurrence_end_mode, recurrence_end_date, recurrence_count,
         recurrence_exceptions
       )
       VALUES (
         @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
+        @status, @outcome, @kind, @source, @isAllDay,
         @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
         @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
         @recurrenceExceptions
@@ -685,6 +833,8 @@ function createTimeBlock(input) {
     `).run({
     ...timeBlock,
     taskId: timeBlock.taskId ?? null,
+    status: mapOutcomeToStatus(timeBlock.outcome),
+    isAllDay: timeBlock.isAllDay ? 1 : 0,
     recurrenceFrequency: timeBlock.recurrenceFrequency ?? "none",
     recurrenceInterval: timeBlock.recurrenceInterval ?? 1,
     recurrenceWeekdays: serializeRecurrenceWeekdays(timeBlock.recurrenceWeekdays),
@@ -704,6 +854,11 @@ function updateTimeBlock(input) {
           task_id = @taskId,
           starts_at = @startsAt,
           ends_at = @endsAt,
+          status = @status,
+          outcome = @outcome,
+          kind = @kind,
+          source = @source,
+          is_all_day = @isAllDay,
           recurrence_frequency = @recurrenceFrequency,
           recurrence_interval = @recurrenceInterval,
           recurrence_weekdays = @recurrenceWeekdays,
@@ -715,6 +870,11 @@ function updateTimeBlock(input) {
     `).run({
     ...input,
     taskId: input.taskId ?? null,
+    outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+    status: mapOutcomeToStatus(normalizeTimeBlockOutcome(input.outcome, input.status)),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+    isAllDay: input.isAllDay ? 1 : 0,
     recurrenceFrequency: input.recurrenceFrequency ?? "none",
     recurrenceInterval: input.recurrenceInterval ?? 1,
     recurrenceWeekdays: serializeRecurrenceWeekdays(input.recurrenceWeekdays),
@@ -723,7 +883,12 @@ function updateTimeBlock(input) {
     recurrenceCount: input.recurrenceCount ?? null,
     recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions)
   });
-  return input;
+  return {
+    ...input,
+    outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source)
+  };
 }
 const addMs = (date, deltaMs) => new Date(new Date(date).getTime() + deltaMs).toISOString();
 const getSeriesUpdate = (seriesBlock, occurrence, updatedBlock) => {
@@ -737,6 +902,10 @@ const getSeriesUpdate = (seriesBlock, occurrence, updatedBlock) => {
     taskId: updatedBlock.taskId,
     startsAt: addMs(seriesBlock.startsAt, startDelta),
     endsAt: addMs(seriesBlock.endsAt, endDelta),
+    outcome: updatedBlock.outcome,
+    kind: updatedBlock.kind,
+    source: updatedBlock.source,
+    isAllDay: updatedBlock.isAllDay,
     recurrenceFrequency: updatedBlock.recurrenceFrequency ?? seriesBlock.recurrenceFrequency,
     recurrenceInterval: updatedBlock.recurrenceInterval ?? seriesBlock.recurrenceInterval,
     recurrenceWeekdays: updatedBlock.recurrenceWeekdays ?? seriesBlock.recurrenceWeekdays,

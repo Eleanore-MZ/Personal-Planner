@@ -2,16 +2,32 @@ import type { Category, Task, TimeBlock } from "./domain";
 
 export type PlannerSnapshot = {
   categories: Category[];
-  taskLists: import("./domain").TaskList[];
   tasks: Task[];
   timeBlocks: TimeBlock[];
 };
 
-export type CreateCategoryInput = Omit<Category, "id">;
+export type CreateCategoryInput = Omit<
+  Category,
+  "id" | "defaultBlockKind" | "hiddenFromCalendar" | "includeInStatsByDefault"
+> &
+  Partial<
+    Pick<
+      Category,
+      "defaultBlockKind" | "hiddenFromCalendar" | "includeInStatsByDefault"
+    >
+  >;
 
 export type CreateTaskInput = Omit<Task, "id">;
 
-export type CreateTimeBlockInput = Omit<TimeBlock, "id"> & { id?: string };
+export type CreateTimeBlockInput = Omit<
+  TimeBlock,
+  "id" | "outcome" | "status" | "kind" | "source"
+> & {
+  id?: string;
+  outcome?: TimeBlock["outcome"];
+  kind?: TimeBlock["kind"];
+  source?: TimeBlock["source"];
+};
 
 export type UpdateCategoryInput = Category;
 

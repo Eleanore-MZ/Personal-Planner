@@ -1,10 +1,26 @@
 import { sectionPlaceholders } from "../data/placeholders";
-import type { CalendarView, NavItemId } from "../types/app";
-import type { Category, Task, TimeBlock } from "../types/domain";
-import { useMemo, useState } from "react";
+import { statsHeatmapMetrics } from "../data/stats";
+import type {
+  CalendarView,
+  NavItemId,
+  StatsAnalyzeBy,
+  StatsBlockKindFilter,
+  StatsBlockOutcomeFilter,
+  StatsBlockSourceFilter,
+  StatsFilters,
+  WeekStartDay,
+} from "../types/app";
+import type {
+  Category,
+  Task,
+  TimeBlock,
+  TimeBlockKind,
+  TimeBlockOutcome,
+} from "../types/domain";
+import { useEffect, useMemo, useState } from "react";
 import TimeBlockDialog from "./calendar/TimeBlockDialog";
 import { getCategoryName } from "../utils/categories";
-import { formatDateTimeRange } from "../utils/date";
+import { formatDate, formatDateTimeRange } from "../utils/date";
 import {
   formatMinutes,
   formatTaskDueDate,
@@ -12,30 +28,133 @@ import {
   isTaskComplete,
   type DueGroupId,
 } from "../utils/tasks";
-import { getTimeBlockMinutes } from "../utils/stats";
-import { formatDate } from "../utils/date";
+import {
+  getCurrentPeriodDate,
+  getNextPeriodDate,
+  getPreviousPeriodDate,
+  getStatsRange,
+  getTimeBlockMinutes,
+} from "../utils/stats";
 import {
   formatRecurrenceLabel,
   getCategoryAccentColor,
   getBlocksForDay,
+  isAllDayBlock,
   isSameCalendarDay,
 } from "../utils/calendar";
+import { SegmentedControl, ToggleRow } from "./ui/ChoiceControls";
 
 type InspectorPanelProps = {
   activeItem: NavItemId;
   activeView: CalendarView;
   categories: Category[];
   compactTaskList: boolean;
-  onSelectBlock: (blockId?: string) => void;
+  weekStartDay: WeekStartDay;
+  onSelectBlock: (blockId?: string, additive?: boolean) => void;
   onSelectTask: (taskId: string) => void;
   onToggleTask: (taskId: string) => void | Promise<void>;
+  onUpdateTask: (task: Task) => void | Promise<void>;
+  onDeleteTask: (taskId: string) => void | Promise<void>;
+  onUpdateCategory: (category: Category) => void | Promise<void>;
   selectedBlockId?: string;
+  selectedBlockIds: string[];
   selectedDate?: Date;
+  selectedStatsDate: Date;
   selectedTaskId?: string;
+  statsFilters: StatsFilters;
   tasks: Task[];
   timeBlocks: TimeBlock[];
+  showHiddenCalendarCategories: boolean;
   onUpdateTimeBlock: (timeBlock: TimeBlock) => void | Promise<void>;
   onDeleteTimeBlock: (timeBlockId: string) => void | Promise<void>;
+  onToggleHiddenCalendarCategories: (showHidden: boolean) => void;
+  onSelectStatsDate: (date: Date) => void;
+  onUpdateStatsFilters: (filters: StatsFilters) => void;
+};
+
+const toDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const toTimeInputValue = (date: Date) => {
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const toAllDayEndInputValue = (date: Date) => {
+  const inclusiveEndDate = new Date(date);
+  inclusiveEndDate.setDate(inclusiveEndDate.getDate() - 1);
+  return toDateInputValue(inclusiveEndDate);
+};
+
+const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
+  { value: "event", label: "Event" },
+  { value: "task-session", label: "Task" },
+  { value: "habit", label: "Habit" },
+  { value: "routine", label: "Routine" },
+];
+
+const taskStatusOptions: Array<{ value: Task["status"]; label: string }> = [
+  { value: "todo", label: "Todo" },
+  { value: "in-progress", label: "In progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
+  { value: "canceled", label: "Canceled" },
+];
+
+const taskPriorityOptions: Array<{ value: Task["priority"]; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
+const blockOutcomeOptions: Array<{ value: TimeBlockOutcome; label: string }> = [
+  { value: "active", label: "Normal" },
+  { value: "abandoned", label: "Abandoned" },
+];
+
+const statsBlockKindOptions: Array<{
+  value: StatsBlockKindFilter;
+  label: string;
+}> = [{ value: "all", label: "All kinds" }, ...blockKindOptions];
+
+const statsAnalyzeByOptions: Array<{ value: StatsAnalyzeBy; label: string }> = [
+  { value: "category", label: "Category" },
+  { value: "kind", label: "Kind" },
+  { value: "outcome", label: "Outcome" },
+  { value: "source", label: "Source" },
+];
+
+const statsBlockOutcomeOptions: Array<{
+  value: StatsBlockOutcomeFilter;
+  label: string;
+}> = [{ value: "all", label: "All outcomes" }, ...blockOutcomeOptions];
+
+const statsBlockSourceOptions: Array<{
+  value: StatsBlockSourceFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All sources" },
+  { value: "manual", label: "Manual" },
+  { value: "pomodoro", label: "Pomodoro" },
+  { value: "generated", label: "Generated" },
+  { value: "imported", label: "Imported" },
+];
+
+const sourceLabels: Record<TimeBlock["source"], string> = {
+  manual: "Manual",
+  pomodoro: "Pomodoro",
+  generated: "Generated",
+  imported: "Imported",
+};
+
+const blockKindHelperText: Partial<Record<TimeBlockKind, string>> = {
+  habit: "Repeatable practice and consistency.",
+  routine: "Regular life patterns like sleep and meals.",
 };
 
 function InspectorPanel({
@@ -43,18 +162,38 @@ function InspectorPanel({
   activeView,
   categories,
   compactTaskList,
+  weekStartDay,
   onSelectBlock,
   onSelectTask,
   onToggleTask,
+  onUpdateTask,
+  onDeleteTask,
+  onUpdateCategory,
   selectedBlockId,
+  selectedBlockIds,
   selectedDate,
+  selectedStatsDate,
   selectedTaskId,
+  statsFilters,
   tasks,
   timeBlocks,
+  showHiddenCalendarCategories,
   onUpdateTimeBlock,
   onDeleteTimeBlock,
+  onToggleHiddenCalendarCategories,
+  onSelectStatsDate,
+  onUpdateStatsFilters,
 }: InspectorPanelProps) {
   const [isEditingBlock, setIsEditingBlock] = useState(false);
+  const [blockTitle, setBlockTitle] = useState("");
+  const [blockNotes, setBlockNotes] = useState("");
+  const [blockStartDate, setBlockStartDate] = useState("");
+  const [blockEndDate, setBlockEndDate] = useState("");
+  const [blockStartTime, setBlockStartTime] = useState("");
+  const [blockEndTime, setBlockEndTime] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskNotes, setTaskNotes] = useState("");
+  const [taskDueDate, setTaskDueDate] = useState("");
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<
     Record<DueGroupId, boolean>
   >({
@@ -67,9 +206,19 @@ function InspectorPanel({
   });
   const [taskCategoryFilter, setTaskCategoryFilter] = useState("all");
   const section = sectionPlaceholders[activeItem];
+  const hiddenCalendarCategories = categories.filter(
+    (category) => category.hiddenFromCalendar,
+  );
+  const visibleRoutineCategories = categories.filter(
+    (category) =>
+      category.defaultBlockKind === "routine" && !category.hiddenFromCalendar,
+  );
   const selectedBlock = timeBlocks.find(
     (block) => block.id === selectedBlockId,
   );
+  const selectedBlocks = selectedBlockIds
+    .map((blockId) => timeBlocks.find((block) => block.id === blockId))
+    .filter((block): block is TimeBlock => Boolean(block));
   const selectedBlockIsRecurring =
     selectedBlock &&
     (selectedBlock.recurringTimeBlockId ||
@@ -77,6 +226,7 @@ function InspectorPanel({
   const linkedTask = selectedBlock?.taskId
     ? tasks.find((task) => task.id === selectedBlock.taskId)
     : undefined;
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   const selectedDateBlocks = selectedDate
     ? getBlocksForDay(timeBlocks, selectedDate)
     : [];
@@ -88,6 +238,76 @@ function InspectorPanel({
     : [];
   const selectedDateMinutes = selectedDateBlocks.reduce(
     (total, block) => total + getTimeBlockMinutes(block),
+    0,
+  );
+  const statsCategoryById = new Map(
+    categories.map((category) => [category.id, category]),
+  );
+  const statsSelectedDateBlocks = getBlocksForDay(
+    timeBlocks,
+    selectedStatsDate,
+  ).filter((block) => {
+    const category = statsCategoryById.get(block.categoryId);
+    const isUncategorized = !category;
+
+    if (!statsFilters.includeAllDayBlocks && isAllDayBlock(block)) {
+      return false;
+    }
+
+    if (statsFilters.blockKind !== "all" && block.kind !== statsFilters.blockKind) {
+      return false;
+    }
+
+    if (
+      statsFilters.blockOutcome !== "all" &&
+      block.outcome !== statsFilters.blockOutcome
+    ) {
+      return false;
+    }
+
+    if (
+      statsFilters.blockSource !== "all" &&
+      block.source !== statsFilters.blockSource
+    ) {
+      return false;
+    }
+
+    if (statsFilters.categoryId !== "all") {
+      return block.categoryId === statsFilters.categoryId;
+    }
+
+    return (
+      (statsFilters.includeUncategorized || !isUncategorized) &&
+      (statsFilters.includeStatsExcludedCategories ||
+        isUncategorized ||
+        Boolean(category?.includeInStatsByDefault))
+    );
+  });
+  const statsSelectedDateTasks = tasks.filter((task) => {
+    const category = statsCategoryById.get(task.categoryId);
+    const isUncategorized = !category;
+
+    if (!task.dueDate || !isSameCalendarDay(new Date(task.dueDate), selectedStatsDate)) {
+      return false;
+    }
+
+    if (statsFilters.categoryId !== "all") {
+      return task.categoryId === statsFilters.categoryId;
+    }
+
+    return (
+      (statsFilters.includeUncategorized || !isUncategorized) &&
+      (statsFilters.includeStatsExcludedCategories ||
+        isUncategorized ||
+        Boolean(category?.includeInStatsByDefault))
+    );
+  });
+  const statsSelectedDateMinutes = statsSelectedDateBlocks.reduce(
+    (total, block) => {
+      const matchesTimeMode =
+        statsFilters.timeMode === "active" && block.outcome === "active";
+      return matchesTimeMode ? total + getTimeBlockMinutes(block) : total;
+    },
     0,
   );
   const upcomingBlocks = timeBlocks
@@ -133,12 +353,164 @@ function InspectorPanel({
     [categories, filteredSidebarTasks],
   );
   const completedTaskCount = filteredSidebarTasks.filter(isTaskComplete).length;
+  const updateStatsFilter = <Key extends keyof StatsFilters>(
+    key: Key,
+    value: StatsFilters[Key],
+  ) => {
+    onUpdateStatsFilters({ ...statsFilters, [key]: value });
+  };
+  const statsPeriodDate = new Date(statsFilters.selectedDateIso);
+  const statsRange = getStatsRange(
+    statsFilters.range,
+    statsPeriodDate,
+    weekStartDay,
+  );
+  const updateStatsPeriodDate = (date: Date) => {
+    onSelectStatsDate(date);
+    onUpdateStatsFilters({
+      ...statsFilters,
+      selectedDateIso: date.toISOString(),
+    });
+  };
   const toggleTaskGroup = (groupId: DueGroupId) => {
     setCollapsedTaskGroups((currentGroups) => ({
       ...currentGroups,
       [groupId]: !currentGroups[groupId],
     }));
   };
+  const updateSelectedBlock = (input: Partial<TimeBlock>) => {
+    if (selectedBlock) {
+      void onUpdateTimeBlock({ ...selectedBlock, ...input });
+    }
+  };
+  const updateSelectedBlocks = (input: Partial<TimeBlock>) => {
+    selectedBlocks.forEach((block) => {
+      void onUpdateTimeBlock({ ...block, ...input });
+    });
+  };
+  const getSharedBlockValue = <Key extends keyof TimeBlock>(key: Key) => {
+    if (selectedBlocks.length === 0) {
+      return "";
+    }
+
+    const firstValue = selectedBlocks[0][key];
+    return selectedBlocks.every((block) => block[key] === firstValue)
+      ? firstValue
+      : "";
+  };
+  const updateSelectedTask = (input: Partial<Task>) => {
+    if (selectedTask) {
+      void onUpdateTask({ ...selectedTask, ...input });
+    }
+  };
+  const commitBlockTitle = () => {
+    const nextTitle = blockTitle.trim();
+    if (!selectedBlock) {
+      return;
+    }
+    if (!nextTitle) {
+      setBlockTitle(selectedBlock.title);
+      return;
+    }
+    if (nextTitle !== selectedBlock.title) {
+      updateSelectedBlock({ title: nextTitle });
+    }
+  };
+  const commitBlockNotes = () => {
+    if (selectedBlock && blockNotes !== selectedBlock.notes) {
+      updateSelectedBlock({ notes: blockNotes });
+    }
+  };
+  const commitBlockDateTime = (
+    nextValues: Partial<{
+      endDate: string;
+      endTime: string;
+      isAllDay: boolean;
+      startDate: string;
+      startTime: string;
+    }>,
+  ) => {
+    if (!selectedBlock) {
+      return;
+    }
+
+    const nextIsAllDay = nextValues.isAllDay ?? Boolean(selectedBlock.isAllDay);
+    const nextStartDate = nextValues.startDate ?? blockStartDate;
+    const nextEndDate = nextValues.endDate ?? blockEndDate;
+    const nextStartTime = nextValues.startTime ?? blockStartTime;
+    const nextEndTime = nextValues.endTime ?? blockEndTime;
+    const normalizedEndDate =
+      nextEndDate < nextStartDate ? nextStartDate : nextEndDate;
+    const startsAt = nextIsAllDay
+      ? new Date(`${nextStartDate}T00:00:00`)
+      : new Date(`${nextStartDate}T${nextStartTime}:00`);
+    const endsAt = nextIsAllDay
+      ? new Date(`${normalizedEndDate}T00:00:00`)
+      : new Date(`${normalizedEndDate}T${nextEndTime}:00`);
+
+    if (nextIsAllDay) {
+      endsAt.setDate(endsAt.getDate() + 1);
+    } else if (endsAt <= startsAt) {
+      endsAt.setMinutes(startsAt.getMinutes() + 15);
+    }
+
+    updateSelectedBlock({
+      isAllDay: nextIsAllDay,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+    });
+  };
+  const commitTaskTitle = () => {
+    const nextTitle = taskTitle.trim();
+    if (!selectedTask) {
+      return;
+    }
+    if (!nextTitle) {
+      setTaskTitle(selectedTask.title);
+      return;
+    }
+    if (nextTitle !== selectedTask.title) {
+      updateSelectedTask({ title: nextTitle });
+    }
+  };
+  const commitTaskNotes = () => {
+    if (selectedTask && taskNotes !== selectedTask.notes) {
+      updateSelectedTask({ notes: taskNotes });
+    }
+  };
+  const hideRoutineCategories = () => {
+    visibleRoutineCategories.forEach((category) => {
+      void onUpdateCategory({ ...category, hiddenFromCalendar: true });
+    });
+  };
+  useEffect(() => {
+    if (!selectedBlock) {
+      return;
+    }
+
+    const startsAt = new Date(selectedBlock.startsAt);
+    const endsAt = new Date(selectedBlock.endsAt);
+    setBlockTitle(selectedBlock.title);
+    setBlockNotes(selectedBlock.notes);
+    setBlockStartDate(toDateInputValue(startsAt));
+    setBlockEndDate(
+      isAllDayBlock(selectedBlock)
+        ? toAllDayEndInputValue(endsAt)
+        : toDateInputValue(endsAt),
+    );
+    setBlockStartTime(toTimeInputValue(startsAt));
+    setBlockEndTime(toTimeInputValue(endsAt));
+  }, [selectedBlock]);
+
+  useEffect(() => {
+    if (!selectedTask) {
+      return;
+    }
+
+    setTaskTitle(selectedTask.title);
+    setTaskNotes(selectedTask.notes);
+    setTaskDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : "");
+  }, [selectedTask]);
 
   return (
     <aside className="inspector" aria-label="Inspector panel">
@@ -146,8 +518,7 @@ function InspectorPanel({
         <div className="panel-kicker">Inspector</div>
         <h2>{section.title}</h2>
         <p className="muted">
-          Contextual details for the selected item will appear here in a later
-          phase.
+          Select a calendar item to edit it here without opening a dialog.
         </p>
       </div>
 
@@ -287,8 +658,566 @@ function InspectorPanel({
             )}
           </div>
         </div>
-      ) : activeItem === "calendar" &&
-      (activeView === "month" || activeView === "year") ? (
+      ) : activeItem === "stats" ? (
+        <div className="inspector-section stats-sidebar-controls">
+          <div className="section-title">Stats Controls</div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Period</div>
+            <div className="range-switcher compact" aria-label="Stats period">
+              {(["week", "month", "year"] as const).map((range) => (
+                <button
+                  className={statsFilters.range === range ? "active" : ""}
+                  key={range}
+                  onClick={() => updateStatsFilter("range", range)}
+                  type="button"
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Current range</div>
+            <div className="stats-range-label">{statsRange.label}</div>
+            <div className="stats-nav-grid">
+              <button
+                className="toolbar-button"
+                onClick={() =>
+                  updateStatsPeriodDate(
+                    getPreviousPeriodDate(statsFilters.range, statsPeriodDate),
+                  )
+                }
+                type="button"
+              >
+                Previous
+              </button>
+              <button
+                className="toolbar-button"
+                onClick={() =>
+                  updateStatsPeriodDate(
+                    getNextPeriodDate(statsFilters.range, statsPeriodDate),
+                  )
+                }
+                type="button"
+              >
+                Next
+              </button>
+            </div>
+            <button
+              className="toolbar-button"
+              onClick={() => updateStatsPeriodDate(getCurrentPeriodDate())}
+              type="button"
+            >
+              Current Period
+            </button>
+          </div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Filters</div>
+            <label>
+              <span>Category</span>
+              <select
+                onChange={(event) =>
+                  updateStatsFilter("categoryId", event.target.value)
+                }
+                value={statsFilters.categoryId}
+              >
+                <option value="all">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Analyze by</span>
+              <SegmentedControl
+                ariaLabel="Analyze stats by"
+                compact
+                onChange={(analyzeBy) => updateStatsFilter("analyzeBy", analyzeBy)}
+                options={statsAnalyzeByOptions}
+                value={statsFilters.analyzeBy}
+              />
+            </label>
+            <label>
+              <span>Block kind</span>
+              <SegmentedControl
+                ariaLabel="Stats block kind filter"
+                compact
+                onChange={(blockKind) => updateStatsFilter("blockKind", blockKind)}
+                options={statsBlockKindOptions}
+                value={statsFilters.blockKind}
+              />
+            </label>
+            <label>
+              <span>Block outcome</span>
+              <SegmentedControl
+                ariaLabel="Stats block outcome filter"
+                compact
+                onChange={(blockOutcome) =>
+                  updateStatsFilter("blockOutcome", blockOutcome)
+                }
+                options={statsBlockOutcomeOptions}
+                value={statsFilters.blockOutcome}
+              />
+            </label>
+            <label>
+              <span>Block source</span>
+              <SegmentedControl
+                ariaLabel="Stats block source filter"
+                compact
+                onChange={(blockSource) => updateStatsFilter("blockSource", blockSource)}
+                options={statsBlockSourceOptions}
+                value={statsFilters.blockSource}
+              />
+            </label>
+            <ToggleRow
+              checked={statsFilters.includeCompletedTasks}
+              label="Include completed tasks"
+              onChange={(checked) => updateStatsFilter("includeCompletedTasks", checked)}
+            />
+            <ToggleRow
+              checked={statsFilters.includeAllDayBlocks}
+              label="Include all-day blocks"
+              onChange={(checked) => updateStatsFilter("includeAllDayBlocks", checked)}
+            />
+            <ToggleRow
+              checked={statsFilters.includeUncategorized}
+              label="Include uncategorized items"
+              onChange={(checked) => updateStatsFilter("includeUncategorized", checked)}
+            />
+            <ToggleRow
+              checked={statsFilters.includeStatsExcludedCategories}
+              label="Include categories excluded from stats"
+              onChange={(checked) =>
+                updateStatsFilter("includeStatsExcludedCategories", checked)
+              }
+            />
+          </div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Year Heatmap Metric</div>
+            <div className="stats-metric-list" aria-label="Heatmap metric">
+              {statsHeatmapMetrics.map((metric) => (
+                <button
+                  className={
+                    statsFilters.heatmapMetric === metric.id ? "active" : ""
+                  }
+                  key={metric.id}
+                  onClick={() => updateStatsFilter("heatmapMetric", metric.id)}
+                  type="button"
+                >
+                  {metric.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Actions</div>
+            <div className="stats-nav-grid">
+              <button
+                className="toolbar-button"
+                onClick={() =>
+                  updateStatsFilter("refreshKey", statsFilters.refreshKey + 1)
+                }
+                type="button"
+              >
+                Refresh
+              </button>
+              <button className="toolbar-button" disabled type="button">
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          {selectedStatsDate ? (
+            <div className="detail-card">
+              <h3>{formatDate(selectedStatsDate)}</h3>
+              <div className="info-row compact">
+                <span>Normal</span>
+                <strong>{formatMinutes(statsSelectedDateMinutes)}</strong>
+              </div>
+              <div className="info-row compact">
+                <span>Blocks</span>
+                <strong>{statsSelectedDateBlocks.length}</strong>
+              </div>
+              <div className="info-row compact">
+                <span>Due tasks</span>
+                <strong>{statsSelectedDateTasks.length}</strong>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : activeItem === "calendar" && selectedBlocks.length > 1 ? (
+        <div className="inspector-section">
+          <div className="section-title">Selected blocks</div>
+          <div className="detail-card inspector-edit-card">
+            <div className="multi-select-summary">
+              <strong>{selectedBlocks.length} blocks selected</strong>
+              <span>Shift-click blocks to add or remove them.</span>
+            </div>
+            <div className="inspector-field-grid">
+              <div className="inspector-field">
+                <span>Outcome</span>
+                <div className="action-button-group">
+                  <button
+                    className="toolbar-button"
+                    onClick={() => updateSelectedBlocks({ outcome: "abandoned" })}
+                    type="button"
+                  >
+                    Mark abandoned
+                  </button>
+                  <button
+                    className="toolbar-button"
+                    onClick={() => updateSelectedBlocks({ outcome: "active" })}
+                    type="button"
+                  >
+                    Restore
+                  </button>
+                </div>
+              </div>
+              <div className="inspector-field">
+                <span>Kind</span>
+                <SegmentedControl
+                  ariaLabel="Bulk time block kind"
+                  compact
+                  onChange={(kind) => updateSelectedBlocks({ kind })}
+                  options={blockKindOptions}
+                  value={(getSharedBlockValue("kind") as TimeBlockKind) || ""}
+                />
+              </div>
+            </div>
+            <label className="inspector-field">
+              <span>Category</span>
+              <select
+                onChange={(event) =>
+                  updateSelectedBlocks({ categoryId: event.target.value })
+                }
+                value={(getSharedBlockValue("categoryId") as string) || ""}
+              >
+                <option disabled value="">
+                  Mixed
+                </option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="info-row compact">
+              <span>Time fields</span>
+              <strong>Open one block to edit dates and times.</strong>
+            </div>
+            <div className="detail-actions">
+              <button
+                className="toolbar-button"
+                onClick={() => onSelectBlock(undefined)}
+                type="button"
+              >
+                Clear Selection
+              </button>
+              <button
+                className="toolbar-button danger-action"
+                onClick={() =>
+                  selectedBlocks.forEach((block) => onDeleteTimeBlock(block.id))
+                }
+                type="button"
+              >
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : activeItem === "calendar" && selectedBlock ? (
+        <div className="inspector-section">
+          <div className="section-title">
+            {isAllDayBlock(selectedBlock) ? "Selected all-day event" : "Selected block"}
+          </div>
+          <div className="detail-card inspector-edit-card">
+            <label className="inspector-field">
+              <span>Title</span>
+              <input
+                onBlur={commitBlockTitle}
+                onChange={(event) => setBlockTitle(event.target.value)}
+                value={blockTitle}
+              />
+            </label>
+            <div className="inspector-field-grid">
+              <div className="inspector-field">
+                <span>Outcome</span>
+                <div className="outcome-action-row">
+                  <strong>
+                    {selectedBlock.outcome === "abandoned"
+                      ? "Abandoned"
+                      : "Normal"}
+                  </strong>
+                  <button
+                    className="toolbar-button"
+                    onClick={() =>
+                      updateSelectedBlock({
+                        outcome:
+                          selectedBlock.outcome === "abandoned"
+                            ? "active"
+                            : "abandoned",
+                      })
+                    }
+                    type="button"
+                  >
+                    {selectedBlock.outcome === "abandoned"
+                      ? "Restore"
+                      : "Abandon"}
+                  </button>
+                </div>
+              </div>
+              <div className="inspector-field">
+                <span>Kind</span>
+                <SegmentedControl
+                  ariaLabel="Time block kind"
+                  compact
+                  onChange={(kind) => updateSelectedBlock({ kind })}
+                  options={blockKindOptions}
+                  value={selectedBlock.kind}
+                />
+                {blockKindHelperText[selectedBlock.kind] ? (
+                  <small className="field-helper-text">
+                    {blockKindHelperText[selectedBlock.kind]}
+                  </small>
+                ) : null}
+              </div>
+            </div>
+            <label className="inspector-field">
+              <span>Category</span>
+              <select
+                onChange={(event) =>
+                  updateSelectedBlock({ categoryId: event.target.value })
+                }
+                value={selectedBlock.categoryId}
+              >
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="checkbox-row inspector-checkbox-row">
+              <input
+                checked={Boolean(selectedBlock.isAllDay)}
+                onChange={(event) =>
+                  commitBlockDateTime({ isAllDay: event.target.checked })
+                }
+                type="checkbox"
+              />
+              <span>All-day event</span>
+            </label>
+            <div className="inspector-field-grid">
+              <label className="inspector-field">
+                <span>Start date</span>
+                <input
+                  onChange={(event) => {
+                    setBlockStartDate(event.target.value);
+                    commitBlockDateTime({ startDate: event.target.value });
+                  }}
+                  type="date"
+                  value={blockStartDate}
+                />
+              </label>
+              <label className="inspector-field">
+                <span>End date</span>
+                <input
+                  onChange={(event) => {
+                    setBlockEndDate(event.target.value);
+                    commitBlockDateTime({ endDate: event.target.value });
+                  }}
+                  type="date"
+                  value={blockEndDate}
+                />
+              </label>
+            </div>
+            {!isAllDayBlock(selectedBlock) ? (
+              <div className="inspector-field-grid">
+                <label className="inspector-field">
+                  <span>Start time</span>
+                  <input
+                    onChange={(event) => {
+                      setBlockStartTime(event.target.value);
+                      commitBlockDateTime({ startTime: event.target.value });
+                    }}
+                    step={15 * 60}
+                    type="time"
+                    value={blockStartTime}
+                  />
+                </label>
+                <label className="inspector-field">
+                  <span>End time</span>
+                  <input
+                    onChange={(event) => {
+                      setBlockEndTime(event.target.value);
+                      commitBlockDateTime({ endTime: event.target.value });
+                    }}
+                    step={15 * 60}
+                    type="time"
+                    value={blockEndTime}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <div className="info-row compact">
+              <span>Repeats</span>
+              <strong>{formatRecurrenceLabel(selectedBlock)}</strong>
+            </div>
+            <label className="inspector-field">
+              <span>Linked task</span>
+              <select
+                onChange={(event) =>
+                  updateSelectedBlock({ taskId: event.target.value || undefined })
+                }
+                value={selectedBlock.taskId ?? ""}
+              >
+                <option value="">No linked task</option>
+                {tasks
+                  .filter((task) => !isTaskComplete(task) || task.id === selectedBlock.taskId)
+                  .map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {linkedTask ? (
+              <div className="info-row compact">
+                <span>Task status</span>
+                <strong>{linkedTask.status}</strong>
+              </div>
+            ) : null}
+            <div className="info-row compact">
+              <span>Source</span>
+              <strong>{sourceLabels[selectedBlock.source]}</strong>
+            </div>
+            <label className="inspector-field">
+              <span>Notes</span>
+              <textarea
+                onBlur={commitBlockNotes}
+                onChange={(event) => setBlockNotes(event.target.value)}
+                rows={4}
+                value={blockNotes}
+              />
+            </label>
+            <div className="detail-actions">
+              <button
+                className="toolbar-button"
+                onClick={() => setIsEditingBlock(true)}
+                type="button"
+              >
+                Advanced Edit
+              </button>
+              <button
+                className="toolbar-button danger-action"
+                onClick={() => onDeleteTimeBlock(selectedBlock.id)}
+                type="button"
+              >
+                {selectedBlockIsRecurring ? "Delete Series" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : activeItem === "calendar" && selectedTask ? (
+        <div className="inspector-section">
+          <div className="section-title">Selected task</div>
+          <div className="detail-card inspector-edit-card">
+            <label className="inspector-field">
+              <span>Title</span>
+              <input
+                onBlur={commitTaskTitle}
+                onChange={(event) => setTaskTitle(event.target.value)}
+                value={taskTitle}
+              />
+            </label>
+            <div className="inspector-field-grid">
+              <div className="inspector-field">
+                <span>Status</span>
+                <SegmentedControl
+                  ariaLabel="Task status"
+                  compact
+                  onChange={(status) => updateSelectedTask({ status })}
+                  options={taskStatusOptions}
+                  value={selectedTask.status}
+                />
+              </div>
+              <div className="inspector-field">
+                <span>Priority</span>
+                <SegmentedControl
+                  ariaLabel="Task priority"
+                  compact
+                  onChange={(priority) => updateSelectedTask({ priority })}
+                  options={taskPriorityOptions}
+                  value={selectedTask.priority}
+                />
+              </div>
+            </div>
+            <label className="inspector-field">
+              <span>Due date</span>
+              <input
+                onChange={(event) => {
+                  setTaskDueDate(event.target.value);
+                  updateSelectedTask({
+                    dueDate: event.target.value
+                      ? new Date(`${event.target.value}T00:00:00`).toISOString()
+                      : undefined,
+                  });
+                }}
+                type="date"
+                value={taskDueDate}
+              />
+            </label>
+            <label className="inspector-field">
+              <span>Category</span>
+              <select
+                onChange={(event) =>
+                  updateSelectedTask({ categoryId: event.target.value })
+                }
+                value={selectedTask.categoryId}
+              >
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="inspector-field">
+              <span>Notes</span>
+              <textarea
+                onBlur={commitTaskNotes}
+                onChange={(event) => setTaskNotes(event.target.value)}
+                rows={4}
+                value={taskNotes}
+              />
+            </label>
+            <div className="detail-actions">
+              <button
+                className="toolbar-button"
+                onClick={() => void onToggleTask(selectedTask.id)}
+                type="button"
+              >
+                {isTaskComplete(selectedTask) ? "Mark Undone" : "Mark Done"}
+              </button>
+              <button
+                className="toolbar-button danger-action"
+                onClick={() => onDeleteTask(selectedTask.id)}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : activeItem === "calendar" && activeView === "month" ? (
         <div className="inspector-section">
           <div className="section-title">Selected day</div>
           {selectedDate ? (
@@ -315,7 +1244,11 @@ function InspectorPanel({
                     type="button"
                   >
                     <span>{block.title}</span>
-                    <small>{formatDateTimeRange(block.startsAt, block.endsAt)}</small>
+                    <small>
+                      {isAllDayBlock(block)
+                        ? "All day"
+                        : formatDateTimeRange(block.startsAt, block.endsAt)}
+                    </small>
                   </button>
                 ))}
                 {selectedDateTasks.map((task) => (
@@ -342,7 +1275,9 @@ function InspectorPanel({
           <div className="detail-card">
             <h3>{selectedBlock.title}</h3>
             <div className="detail-meta">
-              {formatDateTimeRange(selectedBlock.startsAt, selectedBlock.endsAt)}
+              {isAllDayBlock(selectedBlock)
+                ? "All day"
+                : formatDateTimeRange(selectedBlock.startsAt, selectedBlock.endsAt)}
             </div>
             <p>{selectedBlock.notes}</p>
             <div className="info-row compact">
@@ -384,13 +1319,38 @@ function InspectorPanel({
         </div>
       )}
 
-      {activeItem !== "tasks" ? (
-      <div className="inspector-section">
-        <div className="section-title">
-          Upcoming blocks
-        </div>
-        <div className="mini-list">
-          {upcomingBlocks.map((block) => (
+      {activeItem === "calendar" ? (
+        <>
+          <div className="inspector-section">
+            <div className="section-title">Category visibility</div>
+            <div className="detail-card calendar-visibility-card">
+              <ToggleRow
+                checked={showHiddenCalendarCategories}
+                disabled={hiddenCalendarCategories.length === 0}
+                label="Show hidden categories"
+                onChange={onToggleHiddenCalendarCategories}
+              />
+              <div className="detail-meta">
+                {hiddenCalendarCategories.length > 0
+                  ? `${hiddenCalendarCategories.length} hidden categories`
+                  : "No hidden categories"}
+              </div>
+              <button
+                className="toolbar-button"
+                disabled={visibleRoutineCategories.length === 0}
+                onClick={hideRoutineCategories}
+                type="button"
+              >
+                Hide routine categories
+              </button>
+            </div>
+          </div>
+          <div className="inspector-section">
+            <div className="section-title">
+              Upcoming blocks
+            </div>
+            <div className="mini-list">
+              {upcomingBlocks.map((block) => (
                 <button
                   className={`mini-block${
                     selectedBlockId === block.id ? " selected" : ""
@@ -401,12 +1361,15 @@ function InspectorPanel({
                 >
                   <span>{block.title}</span>
                   <small>
-                    {formatDateTimeRange(block.startsAt, block.endsAt)}
+                    {isAllDayBlock(block)
+                      ? "All day"
+                      : formatDateTimeRange(block.startsAt, block.endsAt)}
                   </small>
                 </button>
               ))}
-        </div>
-      </div>
+            </div>
+          </div>
+        </>
       ) : null}
 
       {isEditingBlock && selectedBlock ? (
