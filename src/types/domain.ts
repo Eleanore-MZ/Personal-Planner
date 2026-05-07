@@ -8,6 +8,15 @@ export type Category = {
   includeInStatsByDefault: boolean;
 };
 
+export type StatsGroup = {
+  id: string;
+  name: string;
+  color: string;
+  sortOrder: number;
+  countsTowardProductiveTime: boolean;
+  categoryIds: string[];
+};
+
 export type TaskStatus =
   | "todo"
   | "in-progress"

@@ -12,6 +12,7 @@ import type {
 } from "../types/app";
 import type {
   Category,
+  StatsGroup,
   Task,
   TimeBlock,
   TimeBlockKind,
@@ -48,6 +49,7 @@ type InspectorPanelProps = {
   activeItem: NavItemId;
   activeView: CalendarView;
   categories: Category[];
+  statsGroups: StatsGroup[];
   compactTaskList: boolean;
   weekStartDay: WeekStartDay;
   onSelectBlock: (blockId?: string, additive?: boolean) => void;
@@ -56,6 +58,7 @@ type InspectorPanelProps = {
   onUpdateTask: (task: Task) => void | Promise<void>;
   onDeleteTask: (taskId: string) => void | Promise<void>;
   onUpdateCategory: (category: Category) => void | Promise<void>;
+  onUpdateStatsGroups: (groups: StatsGroup[]) => void | Promise<void>;
   selectedBlockId?: string;
   selectedBlockIds: string[];
   selectedDate?: Date;
@@ -90,6 +93,9 @@ const toAllDayEndInputValue = (date: Date) => {
   inclusiveEndDate.setDate(inclusiveEndDate.getDate() - 1);
   return toDateInputValue(inclusiveEndDate);
 };
+
+const createStatsGroupId = () =>
+  `stats-group-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
   { value: "event", label: "Event" },
@@ -161,6 +167,7 @@ function InspectorPanel({
   activeItem,
   activeView,
   categories,
+  statsGroups,
   compactTaskList,
   weekStartDay,
   onSelectBlock,
@@ -169,6 +176,7 @@ function InspectorPanel({
   onUpdateTask,
   onDeleteTask,
   onUpdateCategory,
+  onUpdateStatsGroups,
   selectedBlockId,
   selectedBlockIds,
   selectedDate,
@@ -194,6 +202,8 @@ function InspectorPanel({
   const [taskTitle, setTaskTitle] = useState("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
+  const [statsGroupDrafts, setStatsGroupDrafts] = useState<StatsGroup[]>([]);
+  const [isStatsGroupsDialogOpen, setIsStatsGroupsDialogOpen] = useState(false);
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<
     Record<DueGroupId, boolean>
   >({
@@ -353,6 +363,9 @@ function InspectorPanel({
     [categories, filteredSidebarTasks],
   );
   const completedTaskCount = filteredSidebarTasks.filter(isTaskComplete).length;
+  const assignedStatsCategoryIds = new Set(
+    statsGroupDrafts.flatMap((group) => group.categoryIds),
+  );
   const updateStatsFilter = <Key extends keyof StatsFilters>(
     key: Key,
     value: StatsFilters[Key],
@@ -402,6 +415,80 @@ function InspectorPanel({
     if (selectedTask) {
       void onUpdateTask({ ...selectedTask, ...input });
     }
+  };
+  const updateStatsGroupDraft = (
+    groupId: string,
+    input: Partial<StatsGroup>,
+  ) => {
+    setStatsGroupDrafts((currentGroups) =>
+      currentGroups.map((group) =>
+        group.id === groupId ? { ...group, ...input } : group,
+      ),
+    );
+  };
+  const addStatsGroupDraft = () => {
+    setStatsGroupDrafts((currentGroups) => [
+      ...currentGroups,
+      {
+        id: createStatsGroupId(),
+        name: "New group",
+        color: "#22d3ee",
+        sortOrder: currentGroups.length,
+        countsTowardProductiveTime: true,
+        categoryIds: [],
+      },
+    ]);
+  };
+  const deleteStatsGroupDraft = (groupId: string) => {
+    setStatsGroupDrafts((currentGroups) =>
+      currentGroups
+        .filter((group) => group.id !== groupId)
+        .map((group, index) => ({ ...group, sortOrder: index })),
+    );
+  };
+  const assignCategoryToStatsGroup = (categoryId: string, groupId: string) => {
+    setStatsGroupDrafts((currentGroups) =>
+      currentGroups.map((group) => ({
+        ...group,
+        categoryIds:
+          group.id === groupId
+            ? [...new Set([...group.categoryIds, categoryId])]
+            : group.categoryIds.filter((currentId) => currentId !== categoryId),
+      })),
+    );
+  };
+  const saveStatsGroupDrafts = () => {
+    void onUpdateStatsGroups(
+      statsGroupDrafts.map((group, index) => ({
+        ...group,
+        name: group.name.trim() || "Untitled group",
+        sortOrder: index,
+        countsTowardProductiveTime: group.countsTowardProductiveTime,
+        categoryIds: [...new Set(group.categoryIds)],
+      })),
+    );
+    setIsStatsGroupsDialogOpen(false);
+  };
+  const cancelStatsGroupDrafts = () => {
+    setStatsGroupDrafts(
+      statsGroups.map((group) => ({
+        ...group,
+        categoryIds: [...group.categoryIds],
+      })),
+    );
+    setIsStatsGroupsDialogOpen(false);
+  };
+  const toggleStatsGroupProductivity = (groupId: string) => {
+    void onUpdateStatsGroups(
+      statsGroups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              countsTowardProductiveTime: !group.countsTowardProductiveTime,
+            }
+          : group,
+      ),
+    );
   };
   const commitBlockTitle = () => {
     const nextTitle = blockTitle.trim();
@@ -511,6 +598,15 @@ function InspectorPanel({
     setTaskNotes(selectedTask.notes);
     setTaskDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : "");
   }, [selectedTask]);
+
+  useEffect(() => {
+    setStatsGroupDrafts(
+      statsGroups.map((group) => ({
+        ...group,
+        categoryIds: [...group.categoryIds],
+      })),
+    );
+  }, [statsGroups]);
 
   return (
     <aside className="inspector" aria-label="Inspector panel">
@@ -796,6 +892,11 @@ function InspectorPanel({
                 updateStatsFilter("includeStatsExcludedCategories", checked)
               }
             />
+            <ToggleRow
+              checked={statsFilters.showAllTrackedTime}
+              label="Show tracked time in productive charts"
+              onChange={(checked) => updateStatsFilter("showAllTrackedTime", checked)}
+            />
           </div>
 
           <div className="stats-control-group">
@@ -813,6 +914,44 @@ function InspectorPanel({
                   {metric.label}
                 </button>
               ))}
+            </div>
+          </div>
+
+          <div className="stats-control-group stats-groups-editor">
+            <div className="stats-group-editor-header">
+              <div className="mini-label">Stats Groups</div>
+              <button
+                className="toolbar-button"
+                onClick={() => setIsStatsGroupsDialogOpen(true)}
+                type="button"
+              >
+                Customize groups
+              </button>
+            </div>
+            <div className="stats-group-compact-list">
+              {statsGroups.map((group) => (
+                <div className="stats-group-compact-row" key={group.id}>
+                  <span
+                    className="stats-group-dot"
+                    style={{ background: group.color }}
+                  />
+                  <span className="stats-group-compact-name">{group.name}</span>
+                  <button
+                    className={`stats-group-productivity-pill${
+                      group.countsTowardProductiveTime ? " productive" : ""
+                    }`}
+                    onClick={() => toggleStatsGroupProductivity(group.id)}
+                    type="button"
+                  >
+                    {group.countsTowardProductiveTime
+                      ? "Productive"
+                      : "Tracked only"}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="detail-meta">
+              {assignedStatsCategoryIds.size}/{categories.length} categories assigned.
             </div>
           </div>
 
@@ -1370,6 +1509,156 @@ function InspectorPanel({
             </div>
           </div>
         </>
+      ) : null}
+
+      {isStatsGroupsDialogOpen ? (
+        <div className="dialog-backdrop">
+          <div className="fake-dialog stats-groups-dialog">
+            <div className="fake-dialog-header">
+              <div>
+                <div className="panel-kicker">Stats</div>
+                <h2>Customize groups</h2>
+              </div>
+              <button
+                className="toolbar-button"
+                onClick={cancelStatsGroupDrafts}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="stats-groups-dialog-body">
+              <div className="stats-group-editor-header">
+                <div>
+                  <div className="mini-label">Groups</div>
+                  <div className="detail-meta">
+                    Productive groups count toward productive time. Other tracked
+                    groups still appear in distribution charts.
+                  </div>
+                </div>
+                <button
+                  className="toolbar-button"
+                  onClick={addStatsGroupDraft}
+                  type="button"
+                >
+                  Add Group
+                </button>
+              </div>
+
+              <div className="stats-group-editor-list">
+                {statsGroupDrafts.map((group) => (
+                  <div className="stats-group-editor-row" key={group.id}>
+                    <input
+                      aria-label={`${group.name} name`}
+                      onChange={(event) =>
+                        updateStatsGroupDraft(group.id, {
+                          name: event.target.value,
+                        })
+                      }
+                      value={group.name}
+                    />
+                    <input
+                      aria-label={`${group.name} color`}
+                      onChange={(event) =>
+                        updateStatsGroupDraft(group.id, {
+                          color: event.target.value,
+                        })
+                      }
+                      type="color"
+                      value={
+                        /^#[0-9a-f]{6}$/i.test(group.color)
+                          ? group.color
+                          : "#22d3ee"
+                      }
+                    />
+                    <button
+                      className={`stats-group-productivity-pill${
+                        group.countsTowardProductiveTime ? " productive" : ""
+                      }`}
+                      onClick={() =>
+                        updateStatsGroupDraft(group.id, {
+                          countsTowardProductiveTime:
+                            !group.countsTowardProductiveTime,
+                        })
+                      }
+                      type="button"
+                    >
+                      {group.countsTowardProductiveTime
+                        ? "Productive"
+                        : "Tracked only"}
+                    </button>
+                    <button
+                      className="toolbar-button danger-action"
+                      onClick={() => deleteStatsGroupDraft(group.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="stats-group-assignment-panel">
+                <div>
+                  <div className="mini-label">Category assignments</div>
+                  <div className="detail-meta">
+                    {assignedStatsCategoryIds.size}/{categories.length} assigned.
+                    Unassigned categories appear in Other.
+                  </div>
+                </div>
+                <div className="stats-group-assignment-list">
+                  {categories.map((category) => {
+                    const assignedGroup = statsGroupDrafts.find((group) =>
+                      group.categoryIds.includes(category.id),
+                    );
+                    return (
+                      <label
+                        className="stats-group-assignment-row"
+                        key={category.id}
+                      >
+                        <span>{category.name}</span>
+                        <select
+                          onChange={(event) =>
+                            assignCategoryToStatsGroup(
+                              category.id,
+                              event.target.value,
+                            )
+                          }
+                          value={assignedGroup?.id ?? ""}
+                        >
+                          <option value="">Other</option>
+                          {statsGroupDrafts.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="fake-dialog-actions">
+              <button
+                className="toolbar-button"
+                onClick={cancelStatsGroupDrafts}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="toolbar-button primary-action"
+                onClick={saveStatsGroupDrafts}
+                type="button"
+              >
+                Save Groups
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {isEditingBlock && selectedBlock ? (

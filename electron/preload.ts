@@ -6,6 +6,7 @@ import type {
   PlannerSnapshot,
   UpdateCategoryInput,
   UpdateRecurringTimeBlockInput,
+  UpdateStatsGroupsInput,
   UpdateTaskInput,
   UpdateTimeBlockInput,
 } from './planner-db'
@@ -42,6 +43,8 @@ contextBridge.exposeInMainWorld('plannerAPI', {
     ipcRenderer.invoke('planner:updateCategory', input),
   deleteCategory: (categoryId: string) =>
     ipcRenderer.invoke('planner:deleteCategory', categoryId),
+  updateStatsGroups: (input: UpdateStatsGroupsInput) =>
+    ipcRenderer.invoke('planner:updateStatsGroups', input),
   createTask: (input: CreateTaskInput) => ipcRenderer.invoke('planner:createTask', input),
   updateTask: (input: UpdateTaskInput) => ipcRenderer.invoke('planner:updateTask', input),
   deleteTask: (taskId: string) => ipcRenderer.invoke('planner:deleteTask', taskId),

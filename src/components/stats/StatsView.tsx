@@ -1,21 +1,30 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { StatsFilters, WeekStartDay } from "../../types/app";
-import type { Category, Task, TimeBlock } from "../../types/domain";
+import type { Category, StatsGroup, Task, TimeBlock } from "../../types/domain";
 import CategoryHoursChart from "./CategoryHoursChart";
 import DailyPlannedHoursChart from "./DailyPlannedHoursChart";
+import HourOfDayChart from "./HourOfDayChart";
 import SelectedDayStats from "./SelectedDayStats";
 import StatsKpiGrid from "./StatsKpiGrid";
 import TaskCompletionChart from "./TaskCompletionChart";
+import TimeGroupsSummary from "./TimeGroupsSummary";
+import WeekRhythmStrip from "./WeekRhythmStrip";
 import YearHeatmap from "./YearHeatmap";
 import YearTotalsPanel from "./YearTotalsPanel";
 import {
   buildYearHeatmapData,
+  calculateCategoryHours,
   calculateDailyPlannedHours,
+  calculateHourOfDayActivity,
   calculateDimensionHours,
   calculateMonthlyPlannedHours,
   calculateStatsSummary,
   calculateTaskStatusStats,
+  calculateTimeOfDaySummary,
+  calculateTimeGroupHours,
   calculateTotalPlannedHours,
+  calculateWeekRhythm,
+  filterBlocksByStatsGroupProductiveTime,
   filterStatsTasks,
   filterStatsTimeBlocks,
   getTimeModeLabel,
@@ -31,10 +40,17 @@ type StatsViewProps = {
   categories: Category[];
   filters: StatsFilters;
   selectedStatsDate: Date;
+  statsGroups: StatsGroup[];
   tasks: Task[];
   timeBlocks: TimeBlock[];
   weekStartDay: WeekStartDay;
   onSelectStatsDate: (date: Date) => void;
+};
+
+type StatsSectionProps = {
+  children: ReactNode;
+  kicker: string;
+  title: string;
 };
 
 const modeLabel = {
@@ -42,6 +58,26 @@ const modeLabel = {
   month: "Month",
   year: "Year",
 };
+
+function StatsSection({ children, kicker, title }: StatsSectionProps) {
+  return (
+    <section className="stats-section">
+      <div className="stats-section-header">
+        <div className="panel-kicker">{kicker}</div>
+        <h2>{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+});
+
+const weekdayChartFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+});
 
 function getPlannedHoursTitle(
   range: StatsFilters["range"],
@@ -102,6 +138,7 @@ function StatsView({
   categories,
   filters,
   selectedStatsDate,
+  statsGroups,
   tasks,
   timeBlocks,
   weekStartDay,
@@ -172,9 +209,58 @@ function StatsView({
     () => getTimeBlocksInRange(filteredBlocks, range.start, range.end),
     [filteredBlocks, range.end, range.start],
   );
+  const trackedActiveBlocks = useMemo(
+    () =>
+      periodBlocks.filter(
+        (block) => block.outcome === "active" && !block.isAllDay,
+      ),
+    [periodBlocks],
+  );
+  const abandonedBlocks = useMemo(
+    () =>
+      periodBlocks.filter(
+        (block) => block.outcome === "abandoned" && !block.isAllDay,
+      ),
+    [periodBlocks],
+  );
+  const productiveActiveBlocks = useMemo(
+    () =>
+      filterBlocksByStatsGroupProductiveTime(
+        trackedActiveBlocks,
+        categories,
+        statsGroups,
+      ),
+    [categories, statsGroups, trackedActiveBlocks],
+  );
+  const productiveChartBlocks = useMemo(
+    () => (filters.showAllTrackedTime ? trackedActiveBlocks : productiveActiveBlocks),
+    [filters.showAllTrackedTime, productiveActiveBlocks, trackedActiveBlocks],
+  );
+  const weekSummaryBlocks = useMemo(
+    () => [...productiveActiveBlocks, ...abandonedBlocks],
+    [abandonedBlocks, productiveActiveBlocks],
+  );
   const tasksDueInPeriod = useMemo(
     () => getTasksDueInRange(filteredTasks, range.start, range.end),
     [filteredTasks, range.end, range.start],
+  );
+  const summaryTasks = useMemo(
+    () =>
+      filterStatsTasks(
+        tasks,
+        filters.categoryId,
+        true,
+        filters.includeUncategorized,
+        categories,
+        filters.includeStatsExcludedCategories,
+      ),
+    [
+      categories,
+      filters.categoryId,
+      filters.includeStatsExcludedCategories,
+      filters.includeUncategorized,
+      tasks,
+    ],
   );
   const overdueTasks = useMemo(() => getOverdueTasks(filteredTasks), [filteredTasks]);
   const statusTasks = useMemo(() => {
@@ -186,6 +272,29 @@ function StatsView({
   const dimensionHours = useMemo(
     () => calculateDimensionHours(periodBlocks, categories, filters.analyzeBy),
     [categories, filters.analyzeBy, periodBlocks],
+  );
+  const weekCategoryHours = useMemo(
+    () =>
+      calculateCategoryHours(trackedActiveBlocks, categories, "active").filter(
+        (category) => category.hours > 0,
+      ),
+    [categories, trackedActiveBlocks],
+  );
+  const weekTimeGroups = useMemo(
+    () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
+    [categories, statsGroups, trackedActiveBlocks],
+  );
+  const weekHourOfDayData = useMemo(
+    () => calculateHourOfDayActivity(productiveChartBlocks, range.start, range.end),
+    [productiveChartBlocks, range.end, range.start],
+  );
+  const weekTimeOfDaySummary = useMemo(
+    () => calculateTimeOfDaySummary(weekHourOfDayData),
+    [weekHourOfDayData],
+  );
+  const weekRhythm = useMemo(
+    () => calculateWeekRhythm(productiveChartBlocks, range.start),
+    [productiveChartBlocks, range.start],
   );
   const plannedHoursData = useMemo(
     () =>
@@ -203,17 +312,58 @@ function StatsView({
           ),
     [filters.range, filters.timeMode, periodBlocks, range.end, range.start],
   );
+  const weekDailyProductiveHoursData = useMemo(
+    () =>
+      calculateDailyPlannedHours(
+        productiveChartBlocks,
+        range.start,
+        range.end,
+        "active",
+      ).map((day) => ({
+        ...day,
+        label: weekdayChartFormatter.format(new Date(day.date)),
+      })),
+    [productiveChartBlocks, range.end, range.start],
+  );
   const summary = useMemo(
     () =>
       calculateStatsSummary(
-        filteredTasks,
-        periodBlocks,
+        summaryTasks,
+        filters.range === "week" ? weekSummaryBlocks : periodBlocks,
         categories,
         range.start,
         range.end,
         filters.timeMode,
       ),
-    [categories, filteredTasks, filters.timeMode, periodBlocks, range.end, range.start],
+    [
+      categories,
+      weekSummaryBlocks,
+      filters.range,
+      filters.timeMode,
+      periodBlocks,
+      range.end,
+      range.start,
+      summaryTasks,
+    ],
+  );
+  const trackedSummary = useMemo(
+    () =>
+      calculateStatsSummary(
+        summaryTasks,
+        trackedActiveBlocks,
+        categories,
+        range.start,
+        range.end,
+        filters.timeMode,
+      ),
+    [
+      categories,
+      filters.timeMode,
+      range.end,
+      range.start,
+      summaryTasks,
+      trackedActiveBlocks,
+    ],
   );
   const taskStatusStats = useMemo(
     () => calculateTaskStatusStats(statusTasks, range.start, range.end),
@@ -245,7 +395,56 @@ function StatsView({
     () => getYearTotals(yearTasks, yearBlocks, categories),
     [categories, yearBlocks, yearTasks],
   );
-  const kpis = [
+  const completionRate =
+    summary.dueTasks > 0
+      ? Math.round((summary.completedTasks / summary.dueTasks) * 100)
+      : 0;
+  const busiestDayLabel = summary.busiestDay
+    ? weekdayFormatter.format(new Date(summary.busiestDay.date))
+    : "None";
+  const weekKpis = [
+    {
+      label: "Productive time",
+      value: `${summary.activeHours.toFixed(1)}h`,
+      detail: `${summary.activeDaysCount} / 7 productive days`,
+    },
+    {
+      label: "Tracked time",
+      value: `${trackedSummary.activeHours.toFixed(1)}h`,
+      detail: "Includes non-productive groups",
+    },
+    {
+      label: "Average/day",
+      value: `${(summary.activeHours / 7).toFixed(1)}h`,
+      detail: "Productive time divided by 7",
+    },
+    {
+      label: "Focus time",
+      value: `${summary.pomodoroHours.toFixed(1)}h`,
+      detail: "Active Pomodoro blocks",
+    },
+    {
+      label: "Tasks due completion",
+      value:
+        summary.dueTasks > 0
+          ? `${summary.completedTasks} / ${summary.dueTasks} (${completionRate}%)`
+          : "0 / 0",
+      detail: summary.dueTasks > 0 ? "Done out of due tasks" : "No due tasks",
+    },
+    {
+      label: "Abandoned time",
+      value: `${summary.abandonedHours.toFixed(1)}h`,
+      detail: "Abandoned blocks only",
+    },
+    {
+      label: "Busiest day",
+      value: busiestDayLabel,
+      detail: summary.busiestDay
+        ? `${summary.busiestDay.hours.toFixed(1)}h active`
+        : "No active time",
+    },
+  ];
+  const defaultKpis = [
     {
       label: "Normal Time",
       value: `${summary.activeHours.toFixed(1)}h`,
@@ -296,6 +495,7 @@ function StatsView({
       detail: `Most ${getTimeModeLabel(filters.timeMode).toLowerCase()} hours`,
     },
   ];
+  const kpis = filters.range === "week" ? weekKpis : defaultKpis;
   const analyzeByLabel = {
     category: "category",
     kind: "block kind",
@@ -303,6 +503,128 @@ function StatsView({
     source: "source",
   }[filters.analyzeBy];
   const hasPeriodData = periodBlocks.length > 0 || tasksDueInPeriod.length > 0;
+  const categoryChartData =
+    filters.range === "week" ? weekCategoryHours : dimensionHours;
+  const dailyChartData =
+    filters.range === "week" ? weekDailyProductiveHoursData : plannedHoursData;
+  const categoryChartTitle =
+    filters.range === "week"
+      ? "Hours by category"
+      : `Hours by ${analyzeByLabel}`;
+  const dailyChartTitle =
+    filters.range === "week"
+      ? filters.showAllTrackedTime
+        ? "Tracked time by weekday"
+        : "Productive time by weekday"
+      : getPlannedHoursTitle(filters.range, filters.timeMode);
+  const hasProductiveTime = summary.activeHours > 0;
+  const hasDueTasks = summary.dueTasks > 0;
+  const hasFocusTime = summary.pomodoroHours > 0;
+
+  const weekStatsContent = (
+    <>
+      <StatsSection kicker="Overview" title="Overview">
+        <StatsKpiGrid items={kpis} />
+        {!hasProductiveTime ? (
+          <div className="empty-state stats-empty-state">
+            No productive time for this week. Add active time blocks, adjust
+            the sidebar filters, or mark relevant Stats Groups as productive.
+          </div>
+        ) : null}
+      </StatsSection>
+
+      <StatsSection kicker="Time breakdown" title="Time breakdown">
+        <div className="stats-section-grid time-breakdown-grid">
+          <TimeGroupsSummary
+            groups={weekTimeGroups}
+            metricLabel="Tracked Time"
+          />
+          <CategoryHoursChart
+            data={categoryChartData}
+            emptyMessage="No tracked category data for this week under the current filters."
+            hideZeroHours
+            kicker="Tracked categories"
+            title={categoryChartTitle}
+          />
+        </div>
+      </StatsSection>
+
+      <StatsSection kicker="Daily totals" title="Daily totals">
+        <DailyPlannedHoursChart
+          data={dailyChartData}
+          emptyMessage={
+            filters.showAllTrackedTime
+              ? "No tracked time for this week under the current filters."
+              : "No productive time for this week under the current filters."
+          }
+          highlightMax
+          kicker={
+            filters.showAllTrackedTime
+              ? "Weekday tracked time"
+              : "Weekday productive time"
+          }
+          title={dailyChartTitle}
+        />
+      </StatsSection>
+
+      <StatsSection kicker="Time-of-day rhythm" title="Time-of-day rhythm">
+        <div className="stats-section-grid">
+          <HourOfDayChart
+            data={weekHourOfDayData}
+            emptyMessage={
+              filters.showAllTrackedTime
+                ? "No tracked hourly time for this week under the current filters."
+                : "No productive hourly time for this week under the current filters."
+            }
+            metricLabel={filters.showAllTrackedTime ? "tracked" : "productive"}
+            summaries={weekTimeOfDaySummary}
+            title={
+              filters.showAllTrackedTime
+                ? "Tracked time by hour of day"
+                : "Productive time by hour of day"
+            }
+          />
+          <WeekRhythmStrip
+            days={weekRhythm}
+            metricLabel={filters.showAllTrackedTime ? "tracked" : "productive"}
+          />
+        </div>
+      </StatsSection>
+
+      <StatsSection kicker="Tasks and focus" title="Tasks / focus details">
+        <div className="stats-section-grid compact">
+          <TaskCompletionChart
+            emptyMessage="No due tasks for this week under the current filters."
+            stats={taskStatusStats}
+          />
+          <div className="stats-card stats-detail-card">
+            <div className="stats-card-header">
+              <div>
+                <div className="panel-kicker">Focus</div>
+                <h2>Focus time</h2>
+              </div>
+            </div>
+            {hasFocusTime ? (
+              <div className="focus-detail-value">
+                <strong>{summary.pomodoroHours.toFixed(1)}h</strong>
+                <span>Active Pomodoro time in this week</span>
+              </div>
+            ) : (
+              <div className="empty-state">
+                No focus time for this week. Pomodoro blocks will appear here
+                once they are active and match the current filters.
+              </div>
+            )}
+          </div>
+        </div>
+        {!hasDueTasks ? (
+          <div className="empty-state stats-empty-state">
+            No due tasks for this week under the current filters.
+          </div>
+        ) : null}
+      </StatsSection>
+    </>
+  );
 
   return (
     <div className="stats-view">
@@ -311,47 +633,55 @@ function StatsView({
           <div className="panel-kicker">{modeLabel[filters.range]} analytics</div>
           <h2>{range.label}</h2>
           <p>
-            Normal time includes calendar and logged focus blocks.
-            Abandoned time is counted separately.
+            {filters.range === "week"
+              ? "Productive time excludes non-productive Stats Groups. Tracked time still includes active sleep, meal, and rest blocks for distribution views."
+              : "Normal time includes calendar and logged focus blocks. Abandoned time is counted separately."}
           </p>
         </div>
       </section>
 
-      <StatsKpiGrid items={kpis} />
+      {filters.range === "week" ? (
+        weekStatsContent
+      ) : (
+        <>
+          <StatsKpiGrid items={kpis} />
 
-      {!hasPeriodData ? (
-        <div className="empty-state stats-empty-state">
-          No stats data for this period. Adjust the sidebar filters or add time
-          blocks and due tasks in the selected range.
-        </div>
-      ) : null}
+          {!hasPeriodData ? (
+            <div className="empty-state stats-empty-state">
+              No stats data for this period. Adjust the sidebar filters or add
+              time blocks and due tasks in the selected range.
+            </div>
+          ) : null}
 
-      <div className="stats-grid">
-        <CategoryHoursChart
-          data={dimensionHours}
-          kicker="Analyze by"
-          title={`Hours by ${analyzeByLabel}`}
-        />
-        <DailyPlannedHoursChart
-          data={plannedHoursData}
-          title={getPlannedHoursTitle(filters.range, filters.timeMode)}
-        />
-        <TaskCompletionChart stats={taskStatusStats} />
-
-        {filters.range === "year" ? (
-          <>
-            <YearHeatmap
-              data={heatmapData}
-              metric={filters.heatmapMetric}
-              onSelectDate={onSelectStatsDate}
-              selectedDate={selectedStatsDate}
-              year={range.start.getFullYear()}
+          <div className="stats-grid">
+            <CategoryHoursChart
+              data={categoryChartData}
+              emptyMessage="No time block hours match the selected period and filters."
+              kicker="Analyze by"
+              title={categoryChartTitle}
             />
-            <YearTotalsPanel totals={yearTotals} />
-            <SelectedDayStats day={selectedHeatmapDay} />
-          </>
-        ) : null}
-      </div>
+            <DailyPlannedHoursChart
+              data={dailyChartData}
+              title={dailyChartTitle}
+            />
+            <TaskCompletionChart stats={taskStatusStats} />
+
+            {filters.range === "year" ? (
+              <>
+                <YearHeatmap
+                  data={heatmapData}
+                  metric={filters.heatmapMetric}
+                  onSelectDate={onSelectStatsDate}
+                  selectedDate={selectedStatsDate}
+                  year={range.start.getFullYear()}
+                />
+                <YearTotalsPanel totals={yearTotals} />
+                <SelectedDayStats day={selectedHeatmapDay} />
+              </>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 }

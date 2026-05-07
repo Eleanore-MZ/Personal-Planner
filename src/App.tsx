@@ -5,7 +5,7 @@ import InspectorPanel from "./components/InspectorPanel";
 import MainPanel from "./components/MainPanel";
 import Sidebar from "./components/Sidebar";
 import TopToolbar from "./components/TopToolbar";
-import type { Category, Task, TimeBlock } from "./types/domain";
+import type { Category, StatsGroup, Task, TimeBlock } from "./types/domain";
 import type {
   AppSettings,
   CalendarView,
@@ -69,6 +69,7 @@ function App() {
   const [activeView, setActiveView] = useState<CalendarView>("week");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   const [categories, setCategories] = useState<Category[]>([]);
+  const [statsGroups, setStatsGroups] = useState<StatsGroup[]>([]);
   const [selectedCalendarCategoryId, setSelectedCalendarCategoryId] =
     useState<string>();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -97,6 +98,7 @@ function App() {
     includeAllDayBlocks: true,
     includeUncategorized: true,
     includeStatsExcludedCategories: false,
+    showAllTrackedTime: false,
     refreshKey: 0,
   }));
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -238,6 +240,7 @@ function App() {
       .getSnapshot()
       .then((snapshot) => {
         setCategories(snapshot.categories);
+        setStatsGroups(snapshot.statsGroups);
         setTasks(snapshot.tasks);
         setTimeBlocks(snapshot.timeBlocks);
         setSelectedTaskId(snapshot.tasks[0]?.id);
@@ -324,6 +327,12 @@ function App() {
     setCategories((currentCategories) =>
       currentCategories.filter((category) => category.id !== categoryId),
     );
+    setStatsGroups(snapshot.statsGroups);
+  };
+
+  const handleUpdateStatsGroups = async (groups: StatsGroup[]) => {
+    const updatedGroups = await window.plannerAPI.updateStatsGroups(groups);
+    setStatsGroups(updatedGroups);
   };
 
   const handleCreateTimeBlock = async (timeBlock: CreateTimeBlockInput) => {
@@ -375,6 +384,7 @@ function App() {
       scope,
     });
     setCategories(snapshot.categories);
+    setStatsGroups(snapshot.statsGroups);
     setTasks(snapshot.tasks);
     setTimeBlocks(snapshot.timeBlocks);
     setSelectedBlockId(undefined);
@@ -507,6 +517,7 @@ function App() {
             activeItem={activeItem}
             activeView={activeView}
             categories={categories}
+            statsGroups={statsGroups}
             currentDate={currentDate}
             selectedCalendarCategoryId={selectedCalendarCategoryId}
             selectedStatsDate={selectedStatsDate}
@@ -542,6 +553,7 @@ function App() {
             activeItem={activeItem}
             activeView={activeView}
             categories={categories}
+            statsGroups={statsGroups}
             compactTaskList={settings.compactTodo}
             tasks={tasks}
             timeBlocks={
@@ -564,6 +576,7 @@ function App() {
             selectedStatsDate={selectedStatsDate}
             selectedTaskId={selectedTaskId}
             statsFilters={statsFilters}
+            onUpdateStatsGroups={handleUpdateStatsGroups}
             onUpdateStatsFilters={setStatsFilters}
             onSelectStatsDate={setSelectedStatsDate}
           />

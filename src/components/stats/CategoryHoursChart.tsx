@@ -2,16 +2,23 @@ import type { CategoryHoursDatum } from "../../utils/stats";
 
 type CategoryHoursChartProps = {
   data: CategoryHoursDatum[];
+  emptyMessage?: string;
+  hideZeroHours?: boolean;
   kicker?: string;
   title?: string;
 };
 
 function CategoryHoursChart({
   data,
+  emptyMessage = "No time block hours match the selected period and filters.",
+  hideZeroHours = false,
   kicker = "Category hours",
   title = "Normal time by category",
 }: CategoryHoursChartProps) {
-  const maxHours = Math.max(...data.map((item) => item.hours), 1);
+  const chartData = hideZeroHours
+    ? data.filter((category) => category.hours > 0)
+    : data;
+  const maxHours = Math.max(...chartData.map((item) => item.hours), 1);
 
   return (
     <section className="stats-card">
@@ -22,37 +29,35 @@ function CategoryHoursChart({
         </div>
       </div>
 
-      {data.some((category) => category.hours > 0) ? (
+      {chartData.some((category) => category.hours > 0) ? (
         <div className="horizontal-chart">
-          {data.map((category) => (
-          <div className="chart-row" key={category.categoryId ?? "uncategorized"}>
-            <div className="chart-label">
-              <span
-                className="chart-swatch"
-                style={{ background: category.color }}
-              />
-              <span>
-                {category.categoryName}
-                {category.detail ? <small>{category.detail}</small> : null}
-              </span>
+          {chartData.map((category) => (
+            <div className="chart-row" key={category.categoryId ?? "uncategorized"}>
+              <div className="chart-label">
+                <span
+                  className="chart-swatch"
+                  style={{ background: category.color }}
+                />
+                <span>
+                  {category.categoryName}
+                  {category.detail ? <small>{category.detail}</small> : null}
+                </span>
+              </div>
+              <div className="chart-track">
+                <div
+                  className="chart-bar"
+                  style={{
+                    background: category.color,
+                    width: `${(category.hours / maxHours) * 100}%`,
+                  }}
+                />
+              </div>
+              <strong>{category.hours.toFixed(1)}h</strong>
             </div>
-            <div className="chart-track">
-              <div
-                className="chart-bar"
-                style={{
-                  background: category.color,
-                  width: `${(category.hours / maxHours) * 100}%`,
-                }}
-              />
-            </div>
-            <strong>{category.hours.toFixed(1)}h</strong>
-          </div>
           ))}
         </div>
       ) : (
-        <div className="empty-state">
-          No time block hours match the selected period and filters.
-        </div>
+        <div className="empty-state">{emptyMessage}</div>
       )}
     </section>
   );

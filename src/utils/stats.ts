@@ -7,7 +7,7 @@ import type {
   StatsRange,
   StatsTimeMode,
 } from "../types/app";
-import type { Category, Task, TimeBlock } from "../types/domain";
+import type { Category, StatsGroup, Task, TimeBlock } from "../types/domain";
 import {
   addCalendarDays,
   addCalendarMonths,
@@ -49,9 +49,49 @@ export type TaskStatusStats = {
   overdue: number;
 };
 
+export type TimeGroupId =
+  string;
+
+export type TimeGroupDatum = {
+  id: TimeGroupId;
+  name: string;
+  color: string;
+  countsTowardProductiveTime: boolean;
+  hours: number;
+  percent: number;
+};
+
+export type HourOfDayDatum = {
+  hour: number;
+  label: string;
+  hours: number;
+};
+
+export type TimeOfDayDatum = {
+  id: "night" | "morning" | "afternoon" | "evening";
+  name: string;
+  label: string;
+  hours: number;
+  percent: number;
+};
+
+export type WeekRhythmSegment = {
+  startMinute: number;
+  endMinute: number;
+  intensity: number;
+};
+
+export type WeekRhythmDay = {
+  date: string;
+  label: string;
+  segments: WeekRhythmSegment[];
+};
+
 export type StatsSummary = {
   activeHours: number;
+  activeDaysCount: number;
   abandonedHours: number;
+  busiestDay: DailyHoursDatum | null;
   pomodoroHours: number;
   totalPlannedHours: number;
   selectedTimeHours: number;
@@ -109,12 +149,18 @@ const rangeDateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
+const rhythmWeekdayFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "short",
+});
+
 const oneDayMs = 24 * 60 * 60 * 1000;
 
 const isCanceled = (task: Task) => task.status === "canceled";
 const isActiveBlock = (block: TimeBlock) => block.outcome === "active";
 const isAbandonedBlock = (block: TimeBlock) => block.outcome === "abandoned";
 const isPomodoroBlock = (block: TimeBlock) => block.source === "pomodoro";
+const isActivePomodoroBlock = (block: TimeBlock) =>
+  isActiveBlock(block) && isPomodoroBlock(block);
 
 export function getTimeModeLabel(timeMode?: StatsTimeMode) {
   void timeMode;
@@ -274,7 +320,7 @@ export function calculateSkippedHours(timeBlocks: TimeBlock[]) {
 }
 
 export function calculatePomodoroHours(timeBlocks: TimeBlock[]) {
-  return getHoursForBlocks(timeBlocks.filter(isPomodoroBlock));
+  return getHoursForBlocks(timeBlocks.filter(isActivePomodoroBlock));
 }
 
 export function calculateCategoryHours(
@@ -341,6 +387,47 @@ const dimensionColors = [
   "#60a5fa",
 ];
 
+const otherTimeGroupDefinition = {
+  id: "other",
+  name: "Other",
+  color: "#94a3b8",
+  countsTowardProductiveTime: true,
+} satisfies Pick<
+  TimeGroupDatum,
+  "id" | "name" | "color" | "countsTowardProductiveTime"
+>;
+
+const timeOfDayDefinitions: Array<{
+  id: TimeOfDayDatum["id"];
+  name: string;
+  label: string;
+  startHour: number;
+  endHour: number;
+}> = [
+  { id: "night", name: "Night", label: "00:00-06:00", startHour: 0, endHour: 6 },
+  {
+    id: "morning",
+    name: "Morning",
+    label: "06:00-12:00",
+    startHour: 6,
+    endHour: 12,
+  },
+  {
+    id: "afternoon",
+    name: "Afternoon",
+    label: "12:00-18:00",
+    startHour: 12,
+    endHour: 18,
+  },
+  {
+    id: "evening",
+    name: "Evening",
+    label: "18:00-24:00",
+    startHour: 18,
+    endHour: 24,
+  },
+];
+
 function createDimensionDatum(
   key: string | null,
   label: string,
@@ -393,6 +480,234 @@ export function calculateDimensionHours(
       ),
     )
     .sort((first, second) => second.hours - first.hours);
+}
+
+export function calculateTimeGroupHours(
+  timeBlocks: TimeBlock[],
+  categories: Category[],
+  statsGroups: StatsGroup[],
+) {
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const groupByCategoryId = new Map<string, StatsGroup>();
+  const sortedGroups = [...statsGroups].sort(
+    (first, second) => first.sortOrder - second.sortOrder,
+  );
+  const hoursByGroup = new Map<TimeGroupId, number>();
+  const otherGroup =
+    sortedGroups.find((group) => group.name.toLowerCase() === "other") ??
+    otherTimeGroupDefinition;
+  const groupDefinitions = [
+    ...sortedGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      countsTowardProductiveTime: group.countsTowardProductiveTime,
+    })),
+    ...(sortedGroups.some((group) => group.id === otherGroup.id)
+      ? []
+      : [otherGroup]),
+  ];
+
+  groupDefinitions.forEach((definition) => {
+    hoursByGroup.set(definition.id, 0);
+  });
+  sortedGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  getTimeBlocksForTimeMode(timeBlocks, "active").forEach((block) => {
+    const category = categoryById.get(block.categoryId);
+    const group = category ? groupByCategoryId.get(category.id) : undefined;
+    const groupId = group?.id ?? otherGroup.id;
+    hoursByGroup.set(
+      groupId,
+      (hoursByGroup.get(groupId) ?? 0) + getTimeBlockMinutes(block) / 60,
+    );
+  });
+
+  const totalHours = Array.from(hoursByGroup.values()).reduce(
+    (total, hours) => total + hours,
+    0,
+  );
+
+  return groupDefinitions.map<TimeGroupDatum>((definition) => {
+    const hours = hoursByGroup.get(definition.id) ?? 0;
+    return {
+      id: definition.id,
+      name: definition.name,
+      color: definition.color,
+      countsTowardProductiveTime: definition.countsTowardProductiveTime,
+      hours,
+      percent: totalHours > 0 ? (hours / totalHours) * 100 : 0,
+    };
+  });
+}
+
+export function filterBlocksByStatsGroupProductiveTime(
+  timeBlocks: TimeBlock[],
+  categories: Category[],
+  statsGroups: StatsGroup[],
+) {
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const groupByCategoryId = new Map<string, StatsGroup>();
+
+  statsGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  return timeBlocks.filter((block) => {
+    const category = categoryById.get(block.categoryId);
+    const group = category ? groupByCategoryId.get(category.id) : undefined;
+    return group?.countsTowardProductiveTime ?? true;
+  });
+}
+
+function formatHourLabel(hour: number) {
+  return `${hour.toString().padStart(2, "0")}:00`;
+}
+
+function getNextHourStart(date: Date) {
+  const nextHour = new Date(date);
+  nextHour.setMinutes(0, 0, 0);
+
+  if (nextHour.getTime() <= date.getTime()) {
+    nextHour.setHours(nextHour.getHours() + 1);
+  }
+
+  return nextHour;
+}
+
+export function calculateHourOfDayActivity(
+  timeBlocks: TimeBlock[],
+  start: Date,
+  end: Date,
+) {
+  const minutesByHour = Array.from({ length: 24 }, () => 0);
+
+  getTimeBlocksForTimeMode(timeBlocks, "active").forEach((block) => {
+    if (isAllDayBlock(block)) {
+      return;
+    }
+
+    let cursor = new Date(
+      Math.max(new Date(block.startsAt).getTime(), start.getTime()),
+    );
+    const blockEnd = new Date(
+      Math.min(new Date(block.endsAt).getTime(), end.getTime()),
+    );
+
+    while (cursor.getTime() < blockEnd.getTime()) {
+      const nextBoundary = getNextHourStart(cursor);
+      const segmentEnd = new Date(
+        Math.min(nextBoundary.getTime(), blockEnd.getTime()),
+      );
+      const minutes = Math.max(
+        (segmentEnd.getTime() - cursor.getTime()) / 60000,
+        0,
+      );
+
+      minutesByHour[cursor.getHours()] += minutes;
+      cursor = segmentEnd;
+    }
+  });
+
+  return minutesByHour.map<HourOfDayDatum>((minutes, hour) => ({
+    hour,
+    label: formatHourLabel(hour),
+    hours: minutes / 60,
+  }));
+}
+
+export function calculateTimeOfDaySummary(hourData: HourOfDayDatum[]) {
+  const totalHours = hourData.reduce((total, hour) => total + hour.hours, 0);
+
+  return timeOfDayDefinitions.map<TimeOfDayDatum>((definition) => {
+    const hours = hourData
+      .slice(definition.startHour, definition.endHour)
+      .reduce((total, hour) => total + hour.hours, 0);
+
+    return {
+      id: definition.id,
+      name: definition.name,
+      label: definition.label,
+      hours,
+      percent: totalHours > 0 ? (hours / totalHours) * 100 : 0,
+    };
+  });
+}
+
+export function calculateWeekRhythm(
+  timeBlocks: TimeBlock[],
+  start: Date,
+): WeekRhythmDay[] {
+  const activeBlocks = getTimeBlocksForTimeMode(timeBlocks, "active").filter(
+    (block) => !isAllDayBlock(block),
+  );
+
+  return Array.from({ length: 7 }, (_, dayIndex) => {
+    const dayStart = addCalendarDays(start, dayIndex);
+    const dayEnd = addCalendarDays(dayStart, 1);
+    const events: Array<{ minute: number; delta: number }> = [];
+
+    activeBlocks.forEach((block) => {
+      const blockStart = new Date(block.startsAt).getTime();
+      const blockEnd = new Date(block.endsAt).getTime();
+      const overlapStart = Math.max(blockStart, dayStart.getTime());
+      const overlapEnd = Math.min(blockEnd, dayEnd.getTime());
+
+      if (overlapEnd <= overlapStart) {
+        return;
+      }
+
+      events.push({
+        minute: Math.max((overlapStart - dayStart.getTime()) / 60000, 0),
+        delta: 1,
+      });
+      events.push({
+        minute: Math.min((overlapEnd - dayStart.getTime()) / 60000, 24 * 60),
+        delta: -1,
+      });
+    });
+
+    events.sort((first, second) => first.minute - second.minute);
+
+    const segments: WeekRhythmSegment[] = [];
+    let activeCount = 0;
+    let currentMinute = 0;
+    let eventIndex = 0;
+
+    while (eventIndex < events.length) {
+      const minute = events[eventIndex].minute;
+
+      if (activeCount > 0 && minute > currentMinute) {
+        segments.push({
+          startMinute: currentMinute,
+          endMinute: minute,
+          intensity: activeCount,
+        });
+      }
+
+      while (
+        eventIndex < events.length &&
+        events[eventIndex].minute === minute
+      ) {
+        activeCount += events[eventIndex].delta;
+        eventIndex += 1;
+      }
+
+      currentMinute = minute;
+    }
+
+    return {
+      date: dayStart.toISOString(),
+      label: rhythmWeekdayFormatter.format(dayStart),
+      segments,
+    };
+  });
 }
 
 export function calculateDailyPlannedHours(
@@ -468,6 +783,20 @@ export function calculateStatsSummary(
   const categoryHours = calculateCategoryHours(timeBlocks, categories, timeMode);
   const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
   const weekCount = Math.max(1, dayCount / 7);
+  const activeDailyHours = calculateDailyPlannedHours(
+    timeBlocks,
+    start,
+    end,
+    "active",
+  );
+  const busiestDay =
+    activeDailyHours.reduce<DailyHoursDatum | null>((currentBusiestDay, day) => {
+      if (!currentBusiestDay || day.hours > currentBusiestDay.hours) {
+        return day;
+      }
+
+      return currentBusiestDay;
+    }, null) ?? null;
   const activeHours = calculateActualHours(timeBlocks);
   const abandonedHours = calculateSkippedHours(timeBlocks);
   const pomodoroHours = calculatePomodoroHours(timeBlocks);
@@ -478,7 +807,9 @@ export function calculateStatsSummary(
 
   return {
     activeHours,
+    activeDaysCount: activeDailyHours.filter((day) => day.hours > 0).length,
     abandonedHours,
+    busiestDay: busiestDay && busiestDay.hours > 0 ? busiestDay : null,
     pomodoroHours,
     totalPlannedHours,
     selectedTimeHours,
@@ -582,13 +913,15 @@ export function filterStatsTasks(
   return tasks.filter((task) => {
     const category = categoryById.get(task.categoryId);
     const taskIsUncategorized = !category;
+    const categoryIncluded =
+      includeStatsExcludedCategories ||
+      taskIsUncategorized ||
+      Boolean(category?.includeInStatsByDefault);
     const matchesCategory =
       categoryId === "all"
         ? (includeUncategorized || !taskIsUncategorized) &&
-          (includeStatsExcludedCategories ||
-            taskIsUncategorized ||
-            Boolean(category?.includeInStatsByDefault))
-        : task.categoryId === categoryId;
+          categoryIncluded
+        : task.categoryId === categoryId && categoryIncluded;
     const matchesCompletion = includeCompletedTasks || !isTaskComplete(task);
     return matchesCategory && matchesCompletion;
   });
@@ -625,16 +958,18 @@ export function filterStatsTimeBlocks(
 
     const category = categoryById.get(block.categoryId);
     const blockIsUncategorized = !category;
+    const categoryIncluded =
+      includeStatsExcludedCategories ||
+      blockIsUncategorized ||
+      Boolean(category?.includeInStatsByDefault);
 
     if (categoryId !== "all") {
-      return block.categoryId === categoryId;
+      return block.categoryId === categoryId && categoryIncluded;
     }
 
     return (
       (includeUncategorized || !blockIsUncategorized) &&
-      (includeStatsExcludedCategories ||
-        blockIsUncategorized ||
-        Boolean(category?.includeInStatsByDefault))
+      categoryIncluded
     );
   });
 }

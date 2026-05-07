@@ -33,6 +33,9 @@ interface Window {
       input: import('./planner-db').UpdateCategoryInput,
     ) => Promise<import('../src/types/domain').Category>
     deleteCategory: (categoryId: string) => Promise<string>
+    updateStatsGroups: (
+      input: import('./planner-db').UpdateStatsGroupsInput,
+    ) => Promise<import('../src/types/domain').StatsGroup[]>
     createTask: (
       input: import('./planner-db').CreateTaskInput,
     ) => Promise<import('../src/types/domain').Task>

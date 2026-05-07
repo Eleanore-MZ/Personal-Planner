@@ -8,6 +8,7 @@ import {
   deleteTimeBlock,
   getPlannerSnapshot,
   updateCategory,
+  updateStatsGroups,
   updateTask,
   updateTaskStatus,
   updateRecurringTimeBlock,
@@ -17,6 +18,7 @@ import {
   type CreateTimeBlockInput,
   type UpdateCategoryInput,
   type UpdateRecurringTimeBlockInput,
+  type UpdateStatsGroupsInput,
   type UpdateTaskInput,
   type UpdateTimeBlockInput,
 } from './planner-db'
@@ -32,6 +34,9 @@ export function registerPlannerIpcHandlers() {
   )
   ipcMain.handle('planner:deleteCategory', (_event, categoryId: string) =>
     deleteCategory(categoryId),
+  )
+  ipcMain.handle('planner:updateStatsGroups', (_event, input: UpdateStatsGroupsInput) =>
+    updateStatsGroups(input),
   )
   ipcMain.handle('planner:createTask', (_event, input: CreateTaskInput) =>
     createTask(input),

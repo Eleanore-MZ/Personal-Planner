@@ -6,10 +6,11 @@ import {
   sampleTasks,
   sampleTimeBlocks,
 } from '../src/data/sampleData'
-import type { Category, Task, TimeBlock } from '../src/types/domain'
+import type { Category, StatsGroup, Task, TimeBlock } from '../src/types/domain'
 
 export type PlannerSnapshot = {
   categories: Category[]
+  statsGroups: StatsGroup[]
   tasks: Task[]
   timeBlocks: TimeBlock[]
 }
@@ -39,6 +40,8 @@ export type CreateTimeBlockInput = Omit<
 
 export type UpdateCategoryInput = Category
 
+export type UpdateStatsGroupsInput = StatsGroup[]
+
 export type UpdateTaskInput = Task
 
 export type UpdateTimeBlockInput = TimeBlock
@@ -59,6 +62,21 @@ type CategoryRow = {
   default_block_kind: Category['defaultBlockKind'] | null
   hidden_from_calendar: 0 | 1 | null
   include_in_stats_by_default: 0 | 1 | null
+}
+
+type StatsGroupRow = {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+  counts_toward_active_time: 0 | 1 | null
+  created_at: string
+  updated_at: string
+}
+
+type StatsGroupCategoryRow = {
+  group_id: string
+  category_id: string
 }
 
 type TaskRow = {
@@ -156,6 +174,95 @@ const timeBlockOutcomes: TimeBlock['outcome'][] = ['active', 'abandoned']
 const timeBlockKinds: TimeBlock['kind'][] = ['event', 'task-session', 'habit', 'routine']
 const timeBlockSources: TimeBlock['source'][] = ['manual', 'pomodoro', 'generated', 'imported']
 
+const defaultStatsGroups: StatsGroup[] = [
+  {
+    id: 'stats-group-work-study',
+    name: 'Work / Study',
+    color: '#60a5fa',
+    sortOrder: 0,
+    countsTowardProductiveTime: true,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-entertainment',
+    name: 'Entertainment',
+    color: '#a78bfa',
+    sortOrder: 1,
+    countsTowardProductiveTime: true,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-sleep-meals',
+    name: 'Sleep / Meals',
+    color: '#f59e0b',
+    sortOrder: 2,
+    countsTowardProductiveTime: false,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-rest-recovery',
+    name: 'Rest / Recovery',
+    color: '#34d399',
+    sortOrder: 3,
+    countsTowardProductiveTime: false,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-creative',
+    name: 'Creative',
+    color: '#f472b6',
+    sortOrder: 4,
+    countsTowardProductiveTime: true,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-health',
+    name: 'Health',
+    color: '#f87171',
+    sortOrder: 5,
+    countsTowardProductiveTime: true,
+    categoryIds: [],
+  },
+  {
+    id: 'stats-group-other',
+    name: 'Other',
+    color: '#94a3b8',
+    sortOrder: 6,
+    countsTowardProductiveTime: true,
+    categoryIds: [],
+  },
+]
+
+const defaultStatsGroupMatchers: Array<{
+  id: string
+  matcher: RegExp
+}> = [
+  {
+    id: 'stats-group-work-study',
+    matcher: /work|job|study|school|class|course|learning|reading|research|meeting|project|lab/,
+  },
+  {
+    id: 'stats-group-entertainment',
+    matcher: /entertainment|game|gaming|movie|show|tv|stream|social|fun/,
+  },
+  {
+    id: 'stats-group-sleep-meals',
+    matcher: /sleep|meal|food|breakfast|lunch|dinner|eat|cooking|cook/,
+  },
+  {
+    id: 'stats-group-rest-recovery',
+    matcher: /rest|recovery|recover|break|relax|recharge|downtime/,
+  },
+  {
+    id: 'stats-group-creative',
+    matcher: /creative|art|drawing|design|write|writing|craft|compose/,
+  },
+  {
+    id: 'stats-group-health',
+    matcher: /health|gym|workout|exercise|fitness|doctor|medical|therapy/,
+  },
+]
+
 const mapStatusToOutcome = (status?: TimeBlock['status'] | null): TimeBlock['outcome'] => {
   if (status === 'skipped' || status === 'canceled') {
     return 'abandoned'
@@ -195,6 +302,7 @@ export function initializePlannerDatabase() {
   db.pragma('journal_mode = WAL')
   createSchema(db)
   seedDefaults(db)
+  seedDefaultStatsGroups(db)
 }
 
 function getDb() {
@@ -259,6 +367,24 @@ function createSchema(database: Database.Database) {
       recurrence_exceptions TEXT,
       FOREIGN KEY (category_id) REFERENCES categories(id),
       FOREIGN KEY (task_id) REFERENCES tasks(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stats_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      counts_toward_active_time INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS stats_group_categories (
+      group_id TEXT NOT NULL,
+      category_id TEXT NOT NULL UNIQUE,
+      PRIMARY KEY (group_id, category_id),
+      FOREIGN KEY (group_id) REFERENCES stats_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
     );
   `)
 
@@ -420,6 +546,42 @@ function createSchema(database: Database.Database) {
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT')
       .run()
   }
+
+  const statsGroupColumns = database
+    .prepare('PRAGMA table_info(stats_groups)')
+    .all() as Array<{ name: string }>
+  const statsGroupColumnNames = new Set(statsGroupColumns.map((column) => column.name))
+  if (!statsGroupColumnNames.has('created_at')) {
+    database
+      .prepare("ALTER TABLE stats_groups ADD COLUMN created_at TEXT NOT NULL DEFAULT ''")
+      .run()
+  }
+  if (!statsGroupColumnNames.has('updated_at')) {
+    database
+      .prepare("ALTER TABLE stats_groups ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''")
+      .run()
+  }
+  if (!statsGroupColumnNames.has('counts_toward_active_time')) {
+    database
+      .prepare(
+        'ALTER TABLE stats_groups ADD COLUMN counts_toward_active_time INTEGER NOT NULL DEFAULT 1',
+      )
+      .run()
+    database
+      .prepare(
+        `UPDATE stats_groups
+         SET counts_toward_active_time = 0
+         WHERE lower(name) IN ('sleep / meals', 'rest / recovery')`,
+      )
+      .run()
+  }
+  database
+    .prepare(
+      `UPDATE stats_groups
+       SET created_at = CASE WHEN created_at = '' THEN datetime('now') ELSE created_at END,
+           updated_at = CASE WHEN updated_at = '' THEN datetime('now') ELSE updated_at END`,
+    )
+    .run()
 }
 
 function seedDefaults(database: Database.Database) {
@@ -518,12 +680,191 @@ function seedDefaults(database: Database.Database) {
   seed()
 }
 
+function getDefaultStatsGroupIdForCategory(category: CategoryRow) {
+  const categoryName = category.name.toLowerCase()
+  return (
+    defaultStatsGroupMatchers.find((definition) =>
+      definition.matcher.test(categoryName),
+    )?.id ?? 'stats-group-other'
+  )
+}
+
+function seedDefaultStatsGroups(database: Database.Database) {
+  const statsGroupCount = database
+    .prepare('SELECT COUNT(*) AS count FROM stats_groups')
+    .get() as { count: number }
+
+  if (statsGroupCount.count > 0) {
+    return
+  }
+
+  const seed = database.transaction(() => insertDefaultStatsGroups(database))
+  seed()
+}
+
+function insertDefaultStatsGroups(database: Database.Database) {
+  const now = new Date().toISOString()
+  const insertGroup = database.prepare(`
+    INSERT INTO stats_groups (
+      id, name, color, sort_order, counts_toward_active_time, created_at, updated_at
+    )
+    VALUES (
+      @id, @name, @color, @sortOrder, @countsTowardProductiveTime,
+      @createdAt, @updatedAt
+    )
+  `)
+  const insertAssignment = database.prepare(`
+    INSERT OR REPLACE INTO stats_group_categories (group_id, category_id)
+    VALUES (@groupId, @categoryId)
+  `)
+  const categories = database
+    .prepare('SELECT * FROM categories ORDER BY name')
+    .all() as CategoryRow[]
+
+  defaultStatsGroups.forEach((group) =>
+    insertGroup.run({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      sortOrder: group.sortOrder,
+      countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  )
+  categories.forEach((category) => {
+    insertAssignment.run({
+      groupId: getDefaultStatsGroupIdForCategory(category),
+      categoryId: category.id,
+    })
+  })
+}
+
 export function getPlannerSnapshot(): PlannerSnapshot {
   return {
     categories: getCategories(),
+    statsGroups: getStatsGroups(),
     tasks: getTasks(),
     timeBlocks: getTimeBlocks(),
   }
+}
+
+function normalizeStatsGroup(group: StatsGroup, index: number): StatsGroup {
+  return {
+    id: group.id || createId('stats-group'),
+    name: group.name.trim() || 'Untitled group',
+    color: /^#[0-9a-f]{6}$/i.test(group.color) ? group.color : '#22d3ee',
+    sortOrder: Number.isFinite(group.sortOrder) ? group.sortOrder : index,
+    countsTowardProductiveTime: group.countsTowardProductiveTime ?? true,
+    categoryIds: [...new Set(group.categoryIds)],
+  }
+}
+
+export function getStatsGroups(): StatsGroup[] {
+  const database = getDb()
+  const groupRows = database
+    .prepare('SELECT * FROM stats_groups ORDER BY sort_order, name')
+    .all() as StatsGroupRow[]
+  const assignmentRows = database
+    .prepare('SELECT * FROM stats_group_categories')
+    .all() as StatsGroupCategoryRow[]
+  const categoryIdsByGroup = new Map<string, string[]>()
+
+  assignmentRows.forEach((row) => {
+    categoryIdsByGroup.set(row.group_id, [
+      ...(categoryIdsByGroup.get(row.group_id) ?? []),
+      row.category_id,
+    ])
+  })
+
+  return groupRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    sortOrder: row.sort_order,
+    countsTowardProductiveTime: row.counts_toward_active_time !== 0,
+    categoryIds: categoryIdsByGroup.get(row.id) ?? [],
+  }))
+}
+
+export function updateStatsGroups(input: UpdateStatsGroupsInput): StatsGroup[] {
+  const database = getDb()
+  const existingGroups = getStatsGroups()
+  const existingGroupIds = new Set(existingGroups.map((group) => group.id))
+  const normalizedGroups = input.map(normalizeStatsGroup)
+  const normalizedGroupIds = new Set(normalizedGroups.map((group) => group.id))
+  const now = new Date().toISOString()
+
+  const update = database.transaction(() => {
+    if (normalizedGroups.length === 0) {
+      database.prepare('DELETE FROM stats_group_categories').run()
+      database.prepare('DELETE FROM stats_groups').run()
+      insertDefaultStatsGroups(database)
+      return
+    }
+
+    database.prepare('DELETE FROM stats_group_categories').run()
+    existingGroups.forEach((group) => {
+      if (!normalizedGroupIds.has(group.id)) {
+        database.prepare('DELETE FROM stats_groups WHERE id = @id').run({ id: group.id })
+      }
+    })
+
+    normalizedGroups.forEach((group, index) => {
+      if (existingGroupIds.has(group.id)) {
+        database
+          .prepare(
+            `UPDATE stats_groups
+             SET name = @name,
+                 color = @color,
+                 sort_order = @sortOrder,
+                  counts_toward_active_time = @countsTowardProductiveTime,
+                 updated_at = @updatedAt
+             WHERE id = @id`,
+          )
+          .run({
+            ...group,
+            sortOrder: index,
+            countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+            updatedAt: now,
+          })
+      } else {
+        database
+          .prepare(
+            `INSERT INTO stats_groups (
+              id, name, color, sort_order, counts_toward_active_time,
+              created_at, updated_at
+            )
+            VALUES (
+              @id, @name, @color, @sortOrder, @countsTowardProductiveTime,
+              @createdAt, @updatedAt
+            )`,
+          )
+          .run({
+            ...group,
+            sortOrder: index,
+            countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+            createdAt: now,
+            updatedAt: now,
+          })
+      }
+
+      group.categoryIds.forEach((categoryId) => {
+        database
+          .prepare(
+            `INSERT OR REPLACE INTO stats_group_categories (group_id, category_id)
+             VALUES (@groupId, @categoryId)`,
+          )
+          .run({
+            groupId: group.id,
+            categoryId,
+          })
+      })
+    })
+  })
+
+  update()
+  return getStatsGroups()
 }
 
 export function getCategories(): Category[] {
@@ -619,6 +960,9 @@ export function deleteCategory(categoryId: string) {
         'UPDATE time_blocks SET category_id = @fallbackCategoryId WHERE category_id = @categoryId',
       )
       .run({ categoryId, fallbackCategoryId: fallbackCategory.id })
+    database
+      .prepare('DELETE FROM stats_group_categories WHERE category_id = @categoryId')
+      .run({ categoryId })
     database.prepare('DELETE FROM categories WHERE id = @categoryId').run({ categoryId })
   })
 

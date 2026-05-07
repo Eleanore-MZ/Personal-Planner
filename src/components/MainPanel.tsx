@@ -5,7 +5,7 @@ import type {
   NavItemId,
   StatsFilters,
 } from "../types/app";
-import type { Category, Task, TimeBlock } from "../types/domain";
+import type { Category, StatsGroup, Task, TimeBlock } from "../types/domain";
 import type {
   CreateCategoryInput,
   CreateTaskInput,
@@ -25,6 +25,7 @@ type MainPanelProps = {
   activeItem: NavItemId;
   activeView: CalendarView;
   categories: Category[];
+  statsGroups: StatsGroup[];
   currentDate: Date;
   selectedCalendarCategoryId?: string;
   selectedStatsDate: Date;
@@ -59,6 +60,7 @@ function MainPanel({
   activeItem,
   activeView,
   categories,
+  statsGroups,
   currentDate,
   selectedCalendarCategoryId,
   selectedStatsDate,
@@ -156,6 +158,7 @@ function MainPanel({
       {activeItem === "stats" ? (
         <StatsView
           categories={categories}
+          statsGroups={statsGroups}
           filters={statsFilters}
           onSelectStatsDate={onSelectStatsDate}
           selectedStatsDate={selectedStatsDate}

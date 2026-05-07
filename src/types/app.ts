@@ -56,6 +56,7 @@ export type StatsFilters = {
   includeAllDayBlocks: boolean;
   includeUncategorized: boolean;
   includeStatsExcludedCategories: boolean;
+  showAllTrackedTime: boolean;
   refreshKey: number;
 };
 

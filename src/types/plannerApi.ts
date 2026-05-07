@@ -1,7 +1,8 @@
-import type { Category, Task, TimeBlock } from "./domain";
+import type { Category, StatsGroup, Task, TimeBlock } from "./domain";
 
 export type PlannerSnapshot = {
   categories: Category[];
+  statsGroups: StatsGroup[];
   tasks: Task[];
   timeBlocks: TimeBlock[];
 };
@@ -31,6 +32,8 @@ export type CreateTimeBlockInput = Omit<
 
 export type UpdateCategoryInput = Category;
 
+export type UpdateStatsGroupsInput = StatsGroup[];
+
 export type UpdateTaskInput = Task;
 
 export type UpdateTimeBlockInput = TimeBlock;
@@ -47,6 +50,7 @@ export type PlannerAPI = {
   createCategory: (input: CreateCategoryInput) => Promise<Category>;
   updateCategory: (input: UpdateCategoryInput) => Promise<Category>;
   deleteCategory: (categoryId: string) => Promise<string>;
+  updateStatsGroups: (groups: StatsGroup[]) => Promise<StatsGroup[]>;
   createTask: (input: CreateTaskInput) => Promise<Task>;
   updateTask: (input: UpdateTaskInput) => Promise<Task>;
   deleteTask: (taskId: string) => Promise<string>;
