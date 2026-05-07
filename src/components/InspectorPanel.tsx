@@ -180,7 +180,6 @@ function InspectorPanel({
   selectedBlockId,
   selectedBlockIds,
   selectedDate,
-  selectedStatsDate,
   selectedTaskId,
   statsFilters,
   tasks,
@@ -248,76 +247,6 @@ function InspectorPanel({
     : [];
   const selectedDateMinutes = selectedDateBlocks.reduce(
     (total, block) => total + getTimeBlockMinutes(block),
-    0,
-  );
-  const statsCategoryById = new Map(
-    categories.map((category) => [category.id, category]),
-  );
-  const statsSelectedDateBlocks = getBlocksForDay(
-    timeBlocks,
-    selectedStatsDate,
-  ).filter((block) => {
-    const category = statsCategoryById.get(block.categoryId);
-    const isUncategorized = !category;
-
-    if (!statsFilters.includeAllDayBlocks && isAllDayBlock(block)) {
-      return false;
-    }
-
-    if (statsFilters.blockKind !== "all" && block.kind !== statsFilters.blockKind) {
-      return false;
-    }
-
-    if (
-      statsFilters.blockOutcome !== "all" &&
-      block.outcome !== statsFilters.blockOutcome
-    ) {
-      return false;
-    }
-
-    if (
-      statsFilters.blockSource !== "all" &&
-      block.source !== statsFilters.blockSource
-    ) {
-      return false;
-    }
-
-    if (statsFilters.categoryId !== "all") {
-      return block.categoryId === statsFilters.categoryId;
-    }
-
-    return (
-      (statsFilters.includeUncategorized || !isUncategorized) &&
-      (statsFilters.includeStatsExcludedCategories ||
-        isUncategorized ||
-        Boolean(category?.includeInStatsByDefault))
-    );
-  });
-  const statsSelectedDateTasks = tasks.filter((task) => {
-    const category = statsCategoryById.get(task.categoryId);
-    const isUncategorized = !category;
-
-    if (!task.dueDate || !isSameCalendarDay(new Date(task.dueDate), selectedStatsDate)) {
-      return false;
-    }
-
-    if (statsFilters.categoryId !== "all") {
-      return task.categoryId === statsFilters.categoryId;
-    }
-
-    return (
-      (statsFilters.includeUncategorized || !isUncategorized) &&
-      (statsFilters.includeStatsExcludedCategories ||
-        isUncategorized ||
-        Boolean(category?.includeInStatsByDefault))
-    );
-  });
-  const statsSelectedDateMinutes = statsSelectedDateBlocks.reduce(
-    (total, block) => {
-      const matchesTimeMode =
-        statsFilters.timeMode === "active" && block.outcome === "active";
-      return matchesTimeMode ? total + getTimeBlockMinutes(block) : total;
-    },
     0,
   );
   const upcomingBlocks = timeBlocks
@@ -477,18 +406,6 @@ function InspectorPanel({
       })),
     );
     setIsStatsGroupsDialogOpen(false);
-  };
-  const toggleStatsGroupProductivity = (groupId: string) => {
-    void onUpdateStatsGroups(
-      statsGroups.map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              countsTowardProductiveTime: !group.countsTowardProductiveTime,
-            }
-          : group,
-      ),
-    );
   };
   const commitBlockTitle = () => {
     const nextTitle = blockTitle.trim();
@@ -811,185 +728,28 @@ function InspectorPanel({
           </div>
 
           <div className="stats-control-group">
-            <div className="mini-label">Filters</div>
-            <label>
-              <span>Category</span>
-              <select
-                onChange={(event) =>
-                  updateStatsFilter("categoryId", event.target.value)
-                }
-                value={statsFilters.categoryId}
-              >
-                <option value="all">All categories</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Analyze by</span>
-              <SegmentedControl
-                ariaLabel="Analyze stats by"
-                compact
-                onChange={(analyzeBy) => updateStatsFilter("analyzeBy", analyzeBy)}
-                options={statsAnalyzeByOptions}
-                value={statsFilters.analyzeBy}
-              />
-            </label>
-            <label>
-              <span>Block kind</span>
-              <SegmentedControl
-                ariaLabel="Stats block kind filter"
-                compact
-                onChange={(blockKind) => updateStatsFilter("blockKind", blockKind)}
-                options={statsBlockKindOptions}
-                value={statsFilters.blockKind}
-              />
-            </label>
-            <label>
-              <span>Block outcome</span>
-              <SegmentedControl
-                ariaLabel="Stats block outcome filter"
-                compact
-                onChange={(blockOutcome) =>
-                  updateStatsFilter("blockOutcome", blockOutcome)
-                }
-                options={statsBlockOutcomeOptions}
-                value={statsFilters.blockOutcome}
-              />
-            </label>
-            <label>
-              <span>Block source</span>
-              <SegmentedControl
-                ariaLabel="Stats block source filter"
-                compact
-                onChange={(blockSource) => updateStatsFilter("blockSource", blockSource)}
-                options={statsBlockSourceOptions}
-                value={statsFilters.blockSource}
-              />
-            </label>
-            <ToggleRow
-              checked={statsFilters.includeCompletedTasks}
-              label="Include completed tasks"
-              onChange={(checked) => updateStatsFilter("includeCompletedTasks", checked)}
-            />
-            <ToggleRow
-              checked={statsFilters.includeAllDayBlocks}
-              label="Include all-day blocks"
-              onChange={(checked) => updateStatsFilter("includeAllDayBlocks", checked)}
-            />
-            <ToggleRow
-              checked={statsFilters.includeUncategorized}
-              label="Include uncategorized items"
-              onChange={(checked) => updateStatsFilter("includeUncategorized", checked)}
-            />
-            <ToggleRow
-              checked={statsFilters.includeStatsExcludedCategories}
-              label="Include categories excluded from stats"
-              onChange={(checked) =>
-                updateStatsFilter("includeStatsExcludedCategories", checked)
-              }
-            />
             <ToggleRow
               checked={statsFilters.showAllTrackedTime}
-              label="Show tracked time in productive charts"
+              label="Tracked metric"
               onChange={(checked) => updateStatsFilter("showAllTrackedTime", checked)}
             />
-          </div>
-
-          <div className="stats-control-group">
-            <div className="mini-label">Year Heatmap Metric</div>
-            <div className="stats-metric-list" aria-label="Heatmap metric">
-              {statsHeatmapMetrics.map((metric) => (
-                <button
-                  className={
-                    statsFilters.heatmapMetric === metric.id ? "active" : ""
-                  }
-                  key={metric.id}
-                  onClick={() => updateStatsFilter("heatmapMetric", metric.id)}
-                  type="button"
-                >
-                  {metric.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="stats-control-group stats-groups-editor">
-            <div className="stats-group-editor-header">
-              <div className="mini-label">Stats Groups</div>
-              <button
-                className="toolbar-button"
-                onClick={() => setIsStatsGroupsDialogOpen(true)}
-                type="button"
-              >
-                Customize groups
-              </button>
-            </div>
-            <div className="stats-group-compact-list">
-              {statsGroups.map((group) => (
-                <div className="stats-group-compact-row" key={group.id}>
-                  <span
-                    className="stats-group-dot"
-                    style={{ background: group.color }}
-                  />
-                  <span className="stats-group-compact-name">{group.name}</span>
-                  <button
-                    className={`stats-group-productivity-pill${
-                      group.countsTowardProductiveTime ? " productive" : ""
-                    }`}
-                    onClick={() => toggleStatsGroupProductivity(group.id)}
-                    type="button"
-                  >
-                    {group.countsTowardProductiveTime
-                      ? "Productive"
-                      : "Tracked only"}
-                  </button>
-                </div>
-              ))}
-            </div>
             <div className="detail-meta">
-              {assignedStatsCategoryIds.size}/{categories.length} categories assigned.
+              {statsFilters.showAllTrackedTime
+                ? "Productive charts are showing tracked time."
+                : "Productive charts exclude non-productive groups."}
             </div>
           </div>
 
           <div className="stats-control-group">
-            <div className="mini-label">Actions</div>
-            <div className="stats-nav-grid">
-              <button
-                className="toolbar-button"
-                onClick={() =>
-                  updateStatsFilter("refreshKey", statsFilters.refreshKey + 1)
-                }
-                type="button"
-              >
-                Refresh
-              </button>
-              <button className="toolbar-button" disabled type="button">
-                Export CSV
-              </button>
-            </div>
+            <div className="mini-label">Configuration</div>
+            <button
+              className="toolbar-button"
+              onClick={() => setIsStatsGroupsDialogOpen(true)}
+              type="button"
+            >
+              Customize stats
+            </button>
           </div>
-
-          {selectedStatsDate ? (
-            <div className="detail-card">
-              <h3>{formatDate(selectedStatsDate)}</h3>
-              <div className="info-row compact">
-                <span>Normal</span>
-                <strong>{formatMinutes(statsSelectedDateMinutes)}</strong>
-              </div>
-              <div className="info-row compact">
-                <span>Blocks</span>
-                <strong>{statsSelectedDateBlocks.length}</strong>
-              </div>
-              <div className="info-row compact">
-                <span>Due tasks</span>
-                <strong>{statsSelectedDateTasks.length}</strong>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : activeItem === "calendar" && selectedBlocks.length > 1 ? (
         <div className="inspector-section">
@@ -1517,7 +1277,7 @@ function InspectorPanel({
             <div className="fake-dialog-header">
               <div>
                 <div className="panel-kicker">Stats</div>
-                <h2>Customize groups</h2>
+                <h2>Customize stats</h2>
               </div>
               <button
                 className="toolbar-button"
@@ -1529,6 +1289,165 @@ function InspectorPanel({
             </div>
 
             <div className="stats-groups-dialog-body">
+              <div className="stats-advanced-panel">
+                <div>
+                  <div className="mini-label">Advanced filters</div>
+                  <div className="detail-meta">
+                    Defaults are tuned for the dashboard. Use these only for
+                    focused audits.
+                  </div>
+                </div>
+                <div className="stats-advanced-grid">
+                  <label>
+                    <span>Category</span>
+                    <select
+                      onChange={(event) =>
+                        updateStatsFilter("categoryId", event.target.value)
+                      }
+                      value={statsFilters.categoryId}
+                    >
+                      <option value="all">All categories</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Analyze by</span>
+                    <SegmentedControl
+                      ariaLabel="Analyze stats by"
+                      compact
+                      onChange={(analyzeBy) =>
+                        updateStatsFilter("analyzeBy", analyzeBy)
+                      }
+                      options={statsAnalyzeByOptions}
+                      value={statsFilters.analyzeBy}
+                    />
+                  </label>
+                  <label>
+                    <span>Block kind</span>
+                    <SegmentedControl
+                      ariaLabel="Stats block kind filter"
+                      compact
+                      onChange={(blockKind) =>
+                        updateStatsFilter("blockKind", blockKind)
+                      }
+                      options={statsBlockKindOptions}
+                      value={statsFilters.blockKind}
+                    />
+                  </label>
+                  <label>
+                    <span>Block outcome</span>
+                    <SegmentedControl
+                      ariaLabel="Stats block outcome filter"
+                      compact
+                      onChange={(blockOutcome) =>
+                        updateStatsFilter("blockOutcome", blockOutcome)
+                      }
+                      options={statsBlockOutcomeOptions}
+                      value={statsFilters.blockOutcome}
+                    />
+                  </label>
+                  <label>
+                    <span>Block source</span>
+                    <SegmentedControl
+                      ariaLabel="Stats block source filter"
+                      compact
+                      onChange={(blockSource) =>
+                        updateStatsFilter("blockSource", blockSource)
+                      }
+                      options={statsBlockSourceOptions}
+                      value={statsFilters.blockSource}
+                    />
+                  </label>
+                  <div className="stats-advanced-toggle-list">
+                    <ToggleRow
+                      checked={statsFilters.includeCompletedTasks}
+                      label="Include completed tasks"
+                      onChange={(checked) =>
+                        updateStatsFilter("includeCompletedTasks", checked)
+                      }
+                    />
+                    <ToggleRow
+                      checked={statsFilters.includeAllDayBlocks}
+                      label="Include all-day blocks"
+                      onChange={(checked) =>
+                        updateStatsFilter("includeAllDayBlocks", checked)
+                      }
+                    />
+                    <ToggleRow
+                      checked={statsFilters.includeUncategorized}
+                      label="Include uncategorized items"
+                      onChange={(checked) =>
+                        updateStatsFilter("includeUncategorized", checked)
+                      }
+                    />
+                    <ToggleRow
+                      checked={statsFilters.includeStatsExcludedCategories}
+                      label="Include categories excluded from stats"
+                      onChange={(checked) =>
+                        updateStatsFilter(
+                          "includeStatsExcludedCategories",
+                          checked,
+                        )
+                      }
+                    />
+                    <ToggleRow
+                      checked={statsFilters.showAllTrackedTime}
+                      label="Show tracked time in productive charts"
+                      onChange={(checked) =>
+                        updateStatsFilter("showAllTrackedTime", checked)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="stats-advanced-panel">
+                <div>
+                  <div className="mini-label">Year heatmap metric</div>
+                  <div className="detail-meta">
+                    Applies only when Stats is in Year mode.
+                  </div>
+                </div>
+                <div className="stats-metric-list" aria-label="Heatmap metric">
+                  {statsHeatmapMetrics.map((metric) => (
+                    <button
+                      className={
+                        statsFilters.heatmapMetric === metric.id ? "active" : ""
+                      }
+                      key={metric.id}
+                      onClick={() => updateStatsFilter("heatmapMetric", metric.id)}
+                      type="button"
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="stats-advanced-panel">
+                <div>
+                  <div className="mini-label">Actions</div>
+                </div>
+                <div className="stats-nav-grid">
+                  <button
+                    className="toolbar-button"
+                    onClick={() =>
+                      updateStatsFilter("refreshKey", statsFilters.refreshKey + 1)
+                    }
+                    type="button"
+                  >
+                    Refresh
+                  </button>
+                  <button className="toolbar-button" disabled type="button">
+                    Export CSV
+                  </button>
+                </div>
+              </div>
+
               <div className="stats-group-editor-header">
                 <div>
                   <div className="mini-label">Groups</div>

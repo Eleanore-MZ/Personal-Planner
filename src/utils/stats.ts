@@ -40,6 +40,17 @@ export type DailyHoursDatum = {
   hours: number;
 };
 
+export type DailyGroupHoursSegment = {
+  groupId: string;
+  groupName: string;
+  color: string;
+  hours: number;
+};
+
+export type DailyGroupHoursDatum = DailyHoursDatum & {
+  segments: DailyGroupHoursSegment[];
+};
+
 export type TaskStatusStats = {
   notStarted: number;
   inProgress: number;
@@ -78,12 +89,16 @@ export type TimeOfDayDatum = {
 export type WeekRhythmSegment = {
   startMinute: number;
   endMinute: number;
-  intensity: number;
+  color: string;
+  groupName: string;
+  lane: number;
+  tooltip: string;
 };
 
 export type WeekRhythmDay = {
   date: string;
   label: string;
+  laneCount: number;
   segments: WeekRhythmSegment[];
 };
 
@@ -104,6 +119,15 @@ export type StatsSummary = {
   averagePlannedHoursPerDay: number;
   averagePlannedHoursPerWeek: number;
   mostActiveCategoryName: string | null;
+};
+
+export type SleepStats = {
+  averageHoursPerDay: number;
+  averageDayCount: number;
+  daysLogged: number;
+  longestDay: DailyHoursDatum | null;
+  shortestDay: DailyHoursDatum | null;
+  totalHours: number;
 };
 
 export type YearHeatmapDay = {
@@ -202,6 +226,49 @@ function getOverlappingMinutes(block: TimeBlock, start: Date, end: Date) {
   const overlapStart = Math.max(startsAt, start.getTime());
   const overlapEnd = Math.min(endsAt, end.getTime());
   return Math.max((overlapEnd - overlapStart) / 60000, 0);
+}
+
+function getCategoryStatsGroup(
+  categoryId: string,
+  categories: Category[],
+  statsGroups: StatsGroup[],
+) {
+  const category = categories.find((currentCategory) => currentCategory.id === categoryId);
+  const group = category
+    ? statsGroups.find((currentGroup) =>
+        currentGroup.categoryIds.includes(category.id),
+      )
+    : undefined;
+
+  return { category, group };
+}
+
+function isSleepStatsCategory(category?: Category, group?: StatsGroup) {
+  const categoryName = category?.name.trim().toLowerCase() ?? "";
+  const groupName = group?.name.trim().toLowerCase() ?? "";
+  const categoryLooksLikeSleep = categoryName.includes("sleep");
+  const isSleepGroup = groupName.includes("sleep");
+
+  return categoryLooksLikeSleep || (isSleepGroup && categoryLooksLikeSleep);
+}
+
+function getSleepAverageDayCount(
+  start: Date,
+  end: Date,
+  dayCount: number,
+  daysLogged: number,
+  currentDate = new Date(),
+) {
+  const rangeStart = startOfDay(start).getTime();
+  const rangeEnd = end.getTime();
+  const todayStart = startOfDay(currentDate).getTime();
+
+  if (todayStart >= rangeStart && todayStart < rangeEnd) {
+    const elapsedDays = Math.floor((todayStart - rangeStart) / oneDayMs) + 1;
+    return Math.max(1, Math.min(dayCount, elapsedDays));
+  }
+
+  return Math.max(1, daysLogged || dayCount);
 }
 
 export function getStatsRange(
@@ -570,6 +637,15 @@ function formatHourLabel(hour: number) {
   return `${hour.toString().padStart(2, "0")}:00`;
 }
 
+function formatMinuteLabel(minuteOfDay: number) {
+  const roundedMinute = Math.round(minuteOfDay);
+  const hour = Math.floor(roundedMinute / 60);
+  const minute = roundedMinute % 60;
+  return `${hour.toString().padStart(2, "0")}:${minute
+    .toString()
+    .padStart(2, "0")}`;
+}
+
 function getNextHourStart(date: Date) {
   const nextHour = new Date(date);
   nextHour.setMinutes(0, 0, 0);
@@ -643,68 +719,88 @@ export function calculateTimeOfDaySummary(hourData: HourOfDayDatum[]) {
 export function calculateWeekRhythm(
   timeBlocks: TimeBlock[],
   start: Date,
+  categories: Category[],
+  statsGroups: StatsGroup[],
 ): WeekRhythmDay[] {
   const activeBlocks = getTimeBlocksForTimeMode(timeBlocks, "active").filter(
     (block) => !isAllDayBlock(block),
   );
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const otherGroup =
+    statsGroups.find((group) => group.name.toLowerCase() === "other") ??
+    otherTimeGroupDefinition;
+  const groupByCategoryId = new Map<string, StatsGroup>();
+
+  statsGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  const getGroupForBlock = (block: TimeBlock) => {
+    const category = categoryById.get(block.categoryId);
+    return category ? groupByCategoryId.get(category.id) ?? otherGroup : otherGroup;
+  };
 
   return Array.from({ length: 7 }, (_, dayIndex) => {
     const dayStart = addCalendarDays(start, dayIndex);
     const dayEnd = addCalendarDays(dayStart, 1);
-    const events: Array<{ minute: number; delta: number }> = [];
-
-    activeBlocks.forEach((block) => {
+    const intervals = activeBlocks.flatMap((block) => {
       const blockStart = new Date(block.startsAt).getTime();
       const blockEnd = new Date(block.endsAt).getTime();
       const overlapStart = Math.max(blockStart, dayStart.getTime());
       const overlapEnd = Math.min(blockEnd, dayEnd.getTime());
 
       if (overlapEnd <= overlapStart) {
-        return;
+        return [];
       }
 
-      events.push({
-        minute: Math.max((overlapStart - dayStart.getTime()) / 60000, 0),
-        delta: 1,
-      });
-      events.push({
-        minute: Math.min((overlapEnd - dayStart.getTime()) / 60000, 24 * 60),
-        delta: -1,
-      });
+      const category = categoryById.get(block.categoryId);
+      const group = getGroupForBlock(block);
+      const startMinute = Math.max((overlapStart - dayStart.getTime()) / 60000, 0);
+      const endMinute = Math.min((overlapEnd - dayStart.getTime()) / 60000, 24 * 60);
+      const timeRange = `${formatMinuteLabel(startMinute)}-${formatMinuteLabel(
+        endMinute,
+      )}`;
+
+      return [
+        {
+          startMinute,
+          endMinute,
+          color: group.color,
+          groupName: group.name,
+          tooltip: `${rhythmWeekdayFormatter.format(dayStart)} ${timeRange}\nGroup: ${
+            group.name
+          }\nCategory: ${category?.name ?? "Uncategorized"}\nBlock: ${block.title}`,
+        },
+      ];
     });
+    const laneEnds: number[] = [];
+    const segments = intervals
+      .sort(
+        (first, second) =>
+          first.startMinute - second.startMinute ||
+          first.endMinute - second.endMinute,
+      )
+      .map<WeekRhythmSegment>((interval) => {
+        const lane = laneEnds.findIndex((endMinute) => interval.startMinute >= endMinute);
+        const laneIndex = lane >= 0 ? lane : laneEnds.length;
+        laneEnds[laneIndex] = interval.endMinute;
 
-    events.sort((first, second) => first.minute - second.minute);
-
-    const segments: WeekRhythmSegment[] = [];
-    let activeCount = 0;
-    let currentMinute = 0;
-    let eventIndex = 0;
-
-    while (eventIndex < events.length) {
-      const minute = events[eventIndex].minute;
-
-      if (activeCount > 0 && minute > currentMinute) {
-        segments.push({
-          startMinute: currentMinute,
-          endMinute: minute,
-          intensity: activeCount,
-        });
-      }
-
-      while (
-        eventIndex < events.length &&
-        events[eventIndex].minute === minute
-      ) {
-        activeCount += events[eventIndex].delta;
-        eventIndex += 1;
-      }
-
-      currentMinute = minute;
-    }
+        return {
+          startMinute: interval.startMinute,
+          endMinute: interval.endMinute,
+          color: interval.color,
+          groupName: interval.groupName,
+          lane: laneIndex,
+          tooltip: interval.tooltip,
+        };
+      });
 
     return {
       date: dayStart.toISOString(),
       label: rhythmWeekdayFormatter.format(dayStart),
+      laneCount: Math.max(laneEnds.length, 1),
       segments,
     };
   });
@@ -732,6 +828,162 @@ export function calculateDailyPlannedHours(
       hours: minutes / 60,
     };
   });
+}
+
+export function calculateDailyStatsGroupHours(
+  timeBlocks: TimeBlock[],
+  start: Date,
+  end: Date,
+  categories: Category[],
+  statsGroups: StatsGroup[],
+  timeMode: StatsTimeMode = "active",
+): DailyGroupHoursDatum[] {
+  const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const sortedGroups = [...statsGroups].sort(
+    (first, second) => first.sortOrder - second.sortOrder,
+  );
+  const otherGroup =
+    sortedGroups.find((group) => group.name.toLowerCase() === "other") ??
+    otherTimeGroupDefinition;
+  const groupDefinitions = [
+    ...sortedGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+    })),
+    ...(sortedGroups.some((group) => group.id === otherGroup.id)
+      ? []
+      : [otherGroup]),
+  ];
+  const groupByCategoryId = new Map<string, StatsGroup>();
+
+  sortedGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  const getGroupForBlock = (block: TimeBlock) => {
+    const category = categoryById.get(block.categoryId);
+    return category ? groupByCategoryId.get(category.id) ?? otherGroup : otherGroup;
+  };
+  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const dayStart = addCalendarDays(start, index);
+    const dayEnd = addCalendarDays(dayStart, 1);
+    const minutesByGroup = new Map<string, number>();
+
+    selectedBlocks.forEach((block) => {
+      const minutes = getOverlappingMinutes(block, dayStart, dayEnd);
+
+      if (minutes <= 0) {
+        return;
+      }
+
+      const group = getGroupForBlock(block);
+      minutesByGroup.set(group.id, (minutesByGroup.get(group.id) ?? 0) + minutes);
+    });
+
+    const segments = groupDefinitions
+      .map<DailyGroupHoursSegment>((group) => ({
+        groupId: group.id,
+        groupName: group.name,
+        color: group.color,
+        hours: (minutesByGroup.get(group.id) ?? 0) / 60,
+      }))
+      .filter((segment) => segment.hours > 0);
+    const hours = segments.reduce((total, segment) => total + segment.hours, 0);
+
+    return {
+      date: dayStart.toISOString(),
+      label: dayCount > 31
+        ? shortMonthFormatter.format(dayStart)
+        : dayLabelFormatter.format(dayStart),
+      hours,
+      segments,
+    };
+  });
+}
+
+export function calculateSleepStats(
+  timeBlocks: TimeBlock[],
+  categories: Category[],
+  statsGroups: StatsGroup[],
+  start: Date,
+  end: Date,
+  currentDate = new Date(),
+): SleepStats {
+  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const minutesByDay = Array.from({ length: dayCount }, () => 0);
+  let totalMinutes = 0;
+
+  timeBlocks
+    .filter((block) => isActiveBlock(block) && !isAllDayBlock(block))
+    .forEach((block) => {
+      const { category, group } = getCategoryStatsGroup(
+        block.categoryId,
+        categories,
+        statsGroups,
+      );
+
+      if (!isSleepStatsCategory(category, group)) {
+        return;
+      }
+
+      const overlapMinutes = getOverlappingMinutes(block, start, end);
+
+      if (overlapMinutes <= 0) {
+        return;
+      }
+
+      const overlapEnd = Math.min(new Date(block.endsAt).getTime(), end.getTime());
+      const attributionDate = new Date(Math.max(overlapEnd - 1, start.getTime()));
+      const dayIndex = Math.floor(
+        (startOfDay(attributionDate).getTime() - start.getTime()) / oneDayMs,
+      );
+
+      totalMinutes += overlapMinutes;
+
+      if (dayIndex >= 0 && dayIndex < minutesByDay.length) {
+        minutesByDay[dayIndex] += overlapMinutes;
+      }
+    });
+
+  const dailyHours = minutesByDay.map<DailyHoursDatum>((minutes, index) => {
+    const date = addCalendarDays(start, index);
+    return {
+      date: date.toISOString(),
+      label: rhythmWeekdayFormatter.format(date),
+      hours: minutes / 60,
+    };
+  });
+  const loggedDays = dailyHours.filter((day) => day.hours > 0);
+  const shortestDay = loggedDays.reduce<DailyHoursDatum | null>(
+    (current, day) => (!current || day.hours < current.hours ? day : current),
+    null,
+  );
+  const longestDay = loggedDays.reduce<DailyHoursDatum | null>(
+    (current, day) => (!current || day.hours > current.hours ? day : current),
+    null,
+  );
+  const averageDayCount = getSleepAverageDayCount(
+    start,
+    end,
+    dayCount,
+    loggedDays.length,
+    currentDate,
+  );
+
+  return {
+    averageHoursPerDay: totalMinutes / 60 / averageDayCount,
+    averageDayCount,
+    daysLogged: loggedDays.length,
+    longestDay,
+    shortestDay,
+    totalHours: totalMinutes / 60,
+  };
 }
 
 export function calculateMonthlyPlannedHours(

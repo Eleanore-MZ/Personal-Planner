@@ -15,9 +15,11 @@ import {
   buildYearHeatmapData,
   calculateCategoryHours,
   calculateDailyPlannedHours,
+  calculateDailyStatsGroupHours,
   calculateHourOfDayActivity,
   calculateDimensionHours,
   calculateMonthlyPlannedHours,
+  calculateSleepStats,
   calculateStatsSummary,
   calculateTaskStatusStats,
   calculateTimeOfDaySummary,
@@ -61,19 +63,14 @@ const modeLabel = {
 
 function StatsSection({ children, kicker, title }: StatsSectionProps) {
   return (
-    <section className="stats-section">
+    <section aria-label={title} className="stats-section">
       <div className="stats-section-header">
         <div className="panel-kicker">{kicker}</div>
-        <h2>{title}</h2>
       </div>
       {children}
     </section>
   );
 }
-
-const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-});
 
 const weekdayChartFormatter = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
@@ -293,8 +290,14 @@ function StatsView({
     [weekHourOfDayData],
   );
   const weekRhythm = useMemo(
-    () => calculateWeekRhythm(productiveChartBlocks, range.start),
-    [productiveChartBlocks, range.start],
+    () =>
+      calculateWeekRhythm(
+        trackedActiveBlocks,
+        range.start,
+        categories,
+        statsGroups,
+      ),
+    [categories, range.start, statsGroups, trackedActiveBlocks],
   );
   const plannedHoursData = useMemo(
     () =>
@@ -314,16 +317,18 @@ function StatsView({
   );
   const weekDailyProductiveHoursData = useMemo(
     () =>
-      calculateDailyPlannedHours(
+      calculateDailyStatsGroupHours(
         productiveChartBlocks,
         range.start,
         range.end,
+        categories,
+        statsGroups,
         "active",
       ).map((day) => ({
         ...day,
         label: weekdayChartFormatter.format(new Date(day.date)),
       })),
-    [productiveChartBlocks, range.end, range.start],
+    [categories, productiveChartBlocks, range.end, range.start, statsGroups],
   );
   const summary = useMemo(
     () =>
@@ -365,6 +370,17 @@ function StatsView({
       trackedActiveBlocks,
     ],
   );
+  const sleepStats = useMemo(
+    () =>
+      calculateSleepStats(
+        trackedActiveBlocks,
+        categories,
+        statsGroups,
+        range.start,
+        range.end,
+      ),
+    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+  );
   const taskStatusStats = useMemo(
     () => calculateTaskStatusStats(statusTasks, range.start, range.end),
     [range.end, range.start, statusTasks],
@@ -399,9 +415,16 @@ function StatsView({
     summary.dueTasks > 0
       ? Math.round((summary.completedTasks / summary.dueTasks) * 100)
       : 0;
-  const busiestDayLabel = summary.busiestDay
-    ? weekdayFormatter.format(new Date(summary.busiestDay.date))
-    : "None";
+  const sleepRangeDetail =
+    sleepStats.shortestDay && sleepStats.longestDay
+      ? ` - low ${sleepStats.shortestDay.label} ${sleepStats.shortestDay.hours.toFixed(
+          1,
+        )}h - high ${sleepStats.longestDay.label} ${sleepStats.longestDay.hours.toFixed(1)}h`
+      : "";
+  const sleepDaysDetail =
+    sleepStats.averageDayCount === 7
+      ? `${sleepStats.daysLogged} / 7 days logged`
+      : `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days`;
   const weekKpis = [
     {
       label: "Productive time",
@@ -419,9 +442,12 @@ function StatsView({
       detail: "Productive time divided by 7",
     },
     {
-      label: "Focus time",
-      value: `${summary.pomodoroHours.toFixed(1)}h`,
-      detail: "Active Pomodoro blocks",
+      label: "Avg sleep",
+      value:
+        sleepStats.totalHours > 0
+          ? `${sleepStats.averageHoursPerDay.toFixed(1)}h/day`
+          : "No sleep data",
+      detail: `${sleepDaysDetail}${sleepRangeDetail}`,
     },
     {
       label: "Tasks due completion",
@@ -435,13 +461,6 @@ function StatsView({
       label: "Abandoned time",
       value: `${summary.abandonedHours.toFixed(1)}h`,
       detail: "Abandoned blocks only",
-    },
-    {
-      label: "Busiest day",
-      value: busiestDayLabel,
-      detail: summary.busiestDay
-        ? `${summary.busiestDay.hours.toFixed(1)}h active`
-        : "No active time",
     },
   ];
   const defaultKpis = [
@@ -549,26 +568,24 @@ function StatsView({
         </div>
       </StatsSection>
 
-      <StatsSection kicker="Daily totals" title="Daily totals">
-        <DailyPlannedHoursChart
-          data={dailyChartData}
-          emptyMessage={
-            filters.showAllTrackedTime
-              ? "No tracked time for this week under the current filters."
-              : "No productive time for this week under the current filters."
-          }
-          highlightMax
-          kicker={
-            filters.showAllTrackedTime
-              ? "Weekday tracked time"
-              : "Weekday productive time"
-          }
-          title={dailyChartTitle}
-        />
-      </StatsSection>
-
-      <StatsSection kicker="Time-of-day rhythm" title="Time-of-day rhythm">
-        <div className="stats-section-grid">
+      <StatsSection kicker="Patterns" title="Patterns">
+        <div className="stats-section-grid patterns-grid">
+          <DailyPlannedHoursChart
+            compact
+            data={dailyChartData}
+            emptyMessage={
+              filters.showAllTrackedTime
+                ? "No tracked time for this week under the current filters."
+                : "No productive time for this week under the current filters."
+            }
+            highlightMax
+            kicker={
+              filters.showAllTrackedTime
+                ? "Weekday tracked time"
+                : "Weekday productive time"
+            }
+            title={dailyChartTitle}
+          />
           <HourOfDayChart
             data={weekHourOfDayData}
             emptyMessage={
@@ -584,11 +601,14 @@ function StatsView({
                 : "Productive time by hour of day"
             }
           />
-          <WeekRhythmStrip
-            days={weekRhythm}
-            metricLabel={filters.showAllTrackedTime ? "tracked" : "productive"}
-          />
         </div>
+      </StatsSection>
+
+      <StatsSection kicker="Week rhythm" title="Week rhythm">
+        <WeekRhythmStrip
+          days={weekRhythm}
+          title="Weekly rhythm"
+        />
       </StatsSection>
 
       <StatsSection kicker="Tasks and focus" title="Tasks / focus details">
