@@ -4,7 +4,9 @@ import type { Category, StatsGroup, Task, TimeBlock } from "../../types/domain";
 import CategoryHoursChart from "./CategoryHoursChart";
 import DailyPlannedHoursChart from "./DailyPlannedHoursChart";
 import HourOfDayChart from "./HourOfDayChart";
+import MonthActivityMap, { type MonthActivityDay } from "./MonthActivityMap";
 import SelectedDayStats from "./SelectedDayStats";
+import SleepByDayChart from "./SleepByDayChart";
 import StatsKpiGrid from "./StatsKpiGrid";
 import TaskCompletionChart from "./TaskCompletionChart";
 import TimeGroupsSummary from "./TimeGroupsSummary";
@@ -14,6 +16,7 @@ import YearTotalsPanel from "./YearTotalsPanel";
 import {
   buildYearHeatmapData,
   calculateCategoryHours,
+  calculateDailySleepHours,
   calculateDailyPlannedHours,
   calculateDailyStatsGroupHours,
   calculateHourOfDayActivity,
@@ -25,6 +28,7 @@ import {
   calculateTimeOfDaySummary,
   calculateTimeGroupHours,
   calculateTotalPlannedHours,
+  calculateWeeklyStatsGroupHours,
   calculateWeekRhythm,
   filterBlocksByStatsGroupProductiveTime,
   filterStatsTasks,
@@ -75,6 +79,29 @@ function StatsSection({ children, kicker, title }: StatsSectionProps) {
 const weekdayChartFormatter = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
 });
+
+const oneDayMs = 24 * 60 * 60 * 1000;
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getPeriodDayCount(start: Date, end: Date) {
+  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+}
+
+function getElapsedPeriodDayCount(start: Date, end: Date, currentDate = new Date()) {
+  const dayCount = getPeriodDayCount(start, end);
+  const rangeStart = startOfLocalDay(start).getTime();
+  const rangeEnd = end.getTime();
+  const todayStart = startOfLocalDay(currentDate).getTime();
+
+  if (todayStart >= rangeStart && todayStart < rangeEnd) {
+    return Math.max(1, Math.min(dayCount, Math.floor((todayStart - rangeStart) / oneDayMs) + 1));
+  }
+
+  return dayCount;
+}
 
 function getPlannedHoursTitle(
   range: StatsFilters["range"],
@@ -233,7 +260,7 @@ function StatsView({
     () => (filters.showAllTrackedTime ? trackedActiveBlocks : productiveActiveBlocks),
     [filters.showAllTrackedTime, productiveActiveBlocks, trackedActiveBlocks],
   );
-  const weekSummaryBlocks = useMemo(
+  const productiveSummaryBlocks = useMemo(
     () => [...productiveActiveBlocks, ...abandonedBlocks],
     [abandonedBlocks, productiveActiveBlocks],
   );
@@ -278,6 +305,17 @@ function StatsView({
     [categories, trackedActiveBlocks],
   );
   const weekTimeGroups = useMemo(
+    () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
+    [categories, statsGroups, trackedActiveBlocks],
+  );
+  const monthCategoryHours = useMemo(
+    () =>
+      calculateCategoryHours(trackedActiveBlocks, categories, "active").filter(
+        (category) => category.hours > 0,
+      ),
+    [categories, trackedActiveBlocks],
+  );
+  const monthTimeGroups = useMemo(
     () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
     [categories, statsGroups, trackedActiveBlocks],
   );
@@ -330,11 +368,80 @@ function StatsView({
       })),
     [categories, productiveChartBlocks, range.end, range.start, statsGroups],
   );
+  const monthWeeklyProductiveHoursData = useMemo(
+    () =>
+      calculateWeeklyStatsGroupHours(
+        productiveActiveBlocks,
+        range.start,
+        range.end,
+        categories,
+        statsGroups,
+        "active",
+      ),
+    [categories, productiveActiveBlocks, range.end, range.start, statsGroups],
+  );
+  const monthActivityDays = useMemo<MonthActivityDay[]>(() => {
+    if (filters.range !== "month") {
+      return [];
+    }
+
+    const productiveDays = calculateDailyPlannedHours(
+      productiveActiveBlocks,
+      range.start,
+      range.end,
+      "active",
+    );
+    const trackedDays = calculateDailyPlannedHours(
+      trackedActiveBlocks,
+      range.start,
+      range.end,
+      "active",
+    );
+    const focusDays = calculateDailyPlannedHours(
+      trackedActiveBlocks.filter((block) => block.source === "pomodoro"),
+      range.start,
+      range.end,
+      "active",
+    );
+
+    return productiveDays.map((day, index) => ({
+      date: day.date,
+      dayOfMonth: new Date(day.date).getDate(),
+      focusHours: focusDays[index]?.hours ?? 0,
+      productiveHours: day.hours,
+      trackedHours: trackedDays[index]?.hours ?? 0,
+    }));
+  }, [
+    filters.range,
+    productiveActiveBlocks,
+    range.end,
+    range.start,
+    trackedActiveBlocks,
+  ]);
+  const monthHourOfDayData = useMemo(
+    () => calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end),
+    [productiveActiveBlocks, range.end, range.start],
+  );
+  const monthTimeOfDaySummary = useMemo(
+    () => calculateTimeOfDaySummary(monthHourOfDayData),
+    [monthHourOfDayData],
+  );
+  const monthSleepByDayData = useMemo(
+    () =>
+      calculateDailySleepHours(
+        trackedActiveBlocks,
+        categories,
+        statsGroups,
+        range.start,
+        range.end,
+      ),
+    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+  );
   const summary = useMemo(
     () =>
       calculateStatsSummary(
         summaryTasks,
-        filters.range === "week" ? weekSummaryBlocks : periodBlocks,
+        filters.range === "year" ? periodBlocks : productiveSummaryBlocks,
         categories,
         range.start,
         range.end,
@@ -342,7 +449,7 @@ function StatsView({
       ),
     [
       categories,
-      weekSummaryBlocks,
+      productiveSummaryBlocks,
       filters.range,
       filters.timeMode,
       periodBlocks,
@@ -378,8 +485,9 @@ function StatsView({
         statsGroups,
         range.start,
         range.end,
+        filters.range === "month" ? "period-days" : "logged-days",
       ),
-    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+    [categories, filters.range, range.end, range.start, statsGroups, trackedActiveBlocks],
   );
   const taskStatusStats = useMemo(
     () => calculateTaskStatusStats(statusTasks, range.start, range.end),
@@ -425,6 +533,11 @@ function StatsView({
     sleepStats.averageDayCount === 7
       ? `${sleepStats.daysLogged} / 7 days logged`
       : `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days`;
+  const monthAverageDayCount = getElapsedPeriodDayCount(range.start, range.end);
+  const monthCompletionRate =
+    summary.dueTasks > 0
+      ? Math.round((summary.completedTasks / summary.dueTasks) * 100)
+      : 0;
   const weekKpis = [
     {
       label: "Productive time",
@@ -514,7 +627,50 @@ function StatsView({
       detail: `Most ${getTimeModeLabel(filters.timeMode).toLowerCase()} hours`,
     },
   ];
-  const kpis = filters.range === "week" ? weekKpis : defaultKpis;
+  const monthKpis = [
+    {
+      label: "Productive time",
+      value: `${summary.activeHours.toFixed(1)}h`,
+      detail: "Productive groups only",
+    },
+    {
+      label: "Tracked time",
+      value: `${trackedSummary.activeHours.toFixed(1)}h`,
+      detail: "Includes non-productive groups",
+    },
+    {
+      label: "Average/day",
+      value: `${(summary.activeHours / monthAverageDayCount).toFixed(1)}h`,
+      detail: `Productive time over ${monthAverageDayCount} days`,
+    },
+    {
+      label: "Avg sleep",
+      value:
+        sleepStats.totalHours > 0
+          ? `${sleepStats.averageHoursPerDay.toFixed(1)}h/day`
+          : "No sleep data",
+      detail: `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days${sleepRangeDetail}`,
+    },
+    {
+      label: "Tasks due completion",
+      value:
+        summary.dueTasks > 0
+          ? `${summary.completedTasks} / ${summary.dueTasks} (${monthCompletionRate}%)`
+          : "0 / 0",
+      detail: summary.dueTasks > 0 ? "Done out of due tasks" : "No due tasks",
+    },
+    {
+      label: "Abandoned time",
+      value: `${summary.abandonedHours.toFixed(1)}h`,
+      detail: "Abandoned blocks only",
+    },
+  ];
+  const kpis =
+    filters.range === "week"
+      ? weekKpis
+      : filters.range === "month"
+        ? monthKpis
+        : defaultKpis;
   const analyzeByLabel = {
     category: "category",
     kind: "block kind",
@@ -523,18 +679,30 @@ function StatsView({
   }[filters.analyzeBy];
   const hasPeriodData = periodBlocks.length > 0 || tasksDueInPeriod.length > 0;
   const categoryChartData =
-    filters.range === "week" ? weekCategoryHours : dimensionHours;
+    filters.range === "week"
+      ? weekCategoryHours
+      : filters.range === "month"
+        ? monthCategoryHours
+        : dimensionHours;
   const dailyChartData =
-    filters.range === "week" ? weekDailyProductiveHoursData : plannedHoursData;
+    filters.range === "week"
+      ? weekDailyProductiveHoursData
+      : filters.range === "month"
+        ? monthWeeklyProductiveHoursData
+        : plannedHoursData;
   const categoryChartTitle =
     filters.range === "week"
       ? "Hours by category"
+      : filters.range === "month"
+        ? "Hours by category"
       : `Hours by ${analyzeByLabel}`;
   const dailyChartTitle =
     filters.range === "week"
       ? filters.showAllTrackedTime
         ? "Tracked time by weekday"
         : "Productive time by weekday"
+      : filters.range === "month"
+        ? "Productive time by week"
       : getPlannedHoursTitle(filters.range, filters.timeMode);
   const hasProductiveTime = summary.activeHours > 0;
   const hasDueTasks = summary.dueTasks > 0;
@@ -646,6 +814,63 @@ function StatsView({
     </>
   );
 
+  const monthStatsContent = (
+    <>
+      <StatsSection kicker="Overview" title="Overview">
+        <StatsKpiGrid items={kpis} />
+        {!hasProductiveTime ? (
+          <div className="empty-state stats-empty-state">
+            No productive time for this month. Add active time blocks or mark
+            relevant Stats Groups as productive.
+          </div>
+        ) : null}
+      </StatsSection>
+
+      <StatsSection kicker="Time breakdown" title="Time breakdown">
+        <div className="stats-section-grid time-breakdown-grid">
+          <TimeGroupsSummary
+            groups={monthTimeGroups}
+            metricLabel="Tracked Time"
+          />
+          <CategoryHoursChart
+            data={monthCategoryHours}
+            emptyMessage="No tracked category data for this month under the current filters."
+            hideZeroHours
+            kicker="Tracked categories"
+            title="Hours by category"
+          />
+        </div>
+      </StatsSection>
+
+      <StatsSection kicker="Trends" title="Trends">
+        <div className="stats-section-grid">
+          <DailyPlannedHoursChart
+            data={monthWeeklyProductiveHoursData}
+            emptyMessage="No productive time for this month under the current filters."
+            kicker="Monthly trend"
+            showInsights={false}
+            title="Productive time by week"
+          />
+          <TaskCompletionChart stats={taskStatusStats} />
+          <MonthActivityMap days={monthActivityDays} />
+        </div>
+      </StatsSection>
+
+      <StatsSection kicker="Rhythm and sleep" title="Rhythm and sleep">
+        <div className="stats-section-grid">
+          <HourOfDayChart
+            data={monthHourOfDayData}
+            emptyMessage="No productive hourly time for this month under the current filters."
+            metricLabel="productive"
+            summaries={monthTimeOfDaySummary}
+            title="Productive time by hour of day"
+          />
+          <SleepByDayChart data={monthSleepByDayData} />
+        </div>
+      </StatsSection>
+    </>
+  );
+
   return (
     <div className="stats-view">
       <section className="stats-toolbar">
@@ -655,13 +880,17 @@ function StatsView({
           <p>
             {filters.range === "week"
               ? "Productive time excludes non-productive Stats Groups. Tracked time still includes active sleep, meal, and rest blocks for distribution views."
-              : "Normal time includes calendar and logged focus blocks. Abandoned time is counted separately."}
+              : filters.range === "month"
+                ? "Productive time uses productive Stats Groups. Tracked time includes active sleep, meal, and rest blocks; abandoned time stays separate."
+                : "Normal time includes calendar and logged focus blocks. Abandoned time is counted separately."}
           </p>
         </div>
       </section>
 
       {filters.range === "week" ? (
         weekStatsContent
+      ) : filters.range === "month" ? (
+        monthStatsContent
       ) : (
         <>
           <StatsKpiGrid items={kpis} />

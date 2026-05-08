@@ -130,6 +130,8 @@ export type SleepStats = {
   totalHours: number;
 };
 
+export type SleepAveragePolicy = "logged-days" | "period-days";
+
 export type YearHeatmapDay = {
   date: string;
   activeHours: number;
@@ -257,6 +259,7 @@ function getSleepAverageDayCount(
   end: Date,
   dayCount: number,
   daysLogged: number,
+  averagePolicy: SleepAveragePolicy,
   currentDate = new Date(),
 ) {
   const rangeStart = startOfDay(start).getTime();
@@ -266,6 +269,10 @@ function getSleepAverageDayCount(
   if (todayStart >= rangeStart && todayStart < rangeEnd) {
     const elapsedDays = Math.floor((todayStart - rangeStart) / oneDayMs) + 1;
     return Math.max(1, Math.min(dayCount, elapsedDays));
+  }
+
+  if (averagePolicy === "period-days") {
+    return dayCount;
   }
 
   return Math.max(1, daysLogged || dayCount);
@@ -907,12 +914,88 @@ export function calculateDailyStatsGroupHours(
   });
 }
 
+export function calculateWeeklyStatsGroupHours(
+  timeBlocks: TimeBlock[],
+  start: Date,
+  end: Date,
+  categories: Category[],
+  statsGroups: StatsGroup[],
+  timeMode: StatsTimeMode = "active",
+): DailyGroupHoursDatum[] {
+  const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const sortedGroups = [...statsGroups].sort(
+    (first, second) => first.sortOrder - second.sortOrder,
+  );
+  const otherGroup =
+    sortedGroups.find((group) => group.name.toLowerCase() === "other") ??
+    otherTimeGroupDefinition;
+  const groupDefinitions = [
+    ...sortedGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+    })),
+    ...(sortedGroups.some((group) => group.id === otherGroup.id)
+      ? []
+      : [otherGroup]),
+  ];
+  const groupByCategoryId = new Map<string, StatsGroup>();
+
+  sortedGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  const getGroupForBlock = (block: TimeBlock) => {
+    const category = categoryById.get(block.categoryId);
+    return category ? groupByCategoryId.get(category.id) ?? otherGroup : otherGroup;
+  };
+  const weekCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (oneDayMs * 7)));
+
+  return Array.from({ length: weekCount }, (_, index) => {
+    const weekStart = addCalendarDays(start, index * 7);
+    const weekEnd = new Date(Math.min(addCalendarDays(weekStart, 7).getTime(), end.getTime()));
+    const minutesByGroup = new Map<string, number>();
+
+    selectedBlocks.forEach((block) => {
+      const minutes = getOverlappingMinutes(block, weekStart, weekEnd);
+
+      if (minutes <= 0) {
+        return;
+      }
+
+      const group = getGroupForBlock(block);
+      minutesByGroup.set(group.id, (minutesByGroup.get(group.id) ?? 0) + minutes);
+    });
+
+    const segments = groupDefinitions
+      .map<DailyGroupHoursSegment>((group) => ({
+        groupId: group.id,
+        groupName: group.name,
+        color: group.color,
+        hours: (minutesByGroup.get(group.id) ?? 0) / 60,
+      }))
+      .filter((segment) => segment.hours > 0);
+    const hours = segments.reduce((total, segment) => total + segment.hours, 0);
+
+    return {
+      date: weekStart.toISOString(),
+      label: `Wk ${index + 1}`,
+      hours,
+      segments,
+    };
+  });
+}
+
 export function calculateSleepStats(
   timeBlocks: TimeBlock[],
   categories: Category[],
   statsGroups: StatsGroup[],
   start: Date,
   end: Date,
+  averagePolicy: SleepAveragePolicy = "logged-days",
   currentDate = new Date(),
 ): SleepStats {
   const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
@@ -973,6 +1056,7 @@ export function calculateSleepStats(
     end,
     dayCount,
     loggedDays.length,
+    averagePolicy,
     currentDate,
   );
 
@@ -984,6 +1068,56 @@ export function calculateSleepStats(
     shortestDay,
     totalHours: totalMinutes / 60,
   };
+}
+
+export function calculateDailySleepHours(
+  timeBlocks: TimeBlock[],
+  categories: Category[],
+  statsGroups: StatsGroup[],
+  start: Date,
+  end: Date,
+): DailyHoursDatum[] {
+  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const minutesByDay = Array.from({ length: dayCount }, () => 0);
+
+  timeBlocks
+    .filter((block) => isActiveBlock(block) && !isAllDayBlock(block))
+    .forEach((block) => {
+      const { category, group } = getCategoryStatsGroup(
+        block.categoryId,
+        categories,
+        statsGroups,
+      );
+
+      if (!isSleepStatsCategory(category, group)) {
+        return;
+      }
+
+      const overlapMinutes = getOverlappingMinutes(block, start, end);
+
+      if (overlapMinutes <= 0) {
+        return;
+      }
+
+      const overlapEnd = Math.min(new Date(block.endsAt).getTime(), end.getTime());
+      const attributionDate = new Date(Math.max(overlapEnd - 1, start.getTime()));
+      const dayIndex = Math.floor(
+        (startOfDay(attributionDate).getTime() - start.getTime()) / oneDayMs,
+      );
+
+      if (dayIndex >= 0 && dayIndex < minutesByDay.length) {
+        minutesByDay[dayIndex] += overlapMinutes;
+      }
+    });
+
+  return minutesByDay.map<DailyHoursDatum>((minutes, index) => {
+    const date = addCalendarDays(start, index);
+    return {
+      date: date.toISOString(),
+      label: String(date.getDate()),
+      hours: minutes / 60,
+    };
+  });
 }
 
 export function calculateMonthlyPlannedHours(

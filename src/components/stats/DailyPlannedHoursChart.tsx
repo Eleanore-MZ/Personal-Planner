@@ -12,6 +12,7 @@ type DailyPlannedHoursChartProps = {
   emptyMessage?: string;
   highlightMax?: boolean;
   kicker?: string;
+  showInsights?: boolean;
   title?: string;
 };
 
@@ -21,6 +22,7 @@ function DailyPlannedHoursChart({
   emptyMessage = "No block time for this period under the current filters.",
   highlightMax = false,
   kicker = "Daily plan",
+  showInsights = true,
   title = "Planned hours this week",
 }: DailyPlannedHoursChartProps) {
   const maxHours = Math.max(...data.map((item) => item.hours), 1);
@@ -69,7 +71,7 @@ function DailyPlannedHoursChart({
       })),
     )
     .sort((first, second) => second.hours - first.hours)[0];
-  const showInsights = legendItems.length > 0;
+  const shouldShowInsights = showInsights && legendItems.length > 0;
 
   return (
     <section className="stats-card">
@@ -139,7 +141,7 @@ function DailyPlannedHoursChart({
               ))}
             </div>
           ) : null}
-          {showInsights ? (
+          {shouldShowInsights ? (
             <div className="weekday-insights">
               <div className="weekday-insight">
                 <span>Busiest day</span>
