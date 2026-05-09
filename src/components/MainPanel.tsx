@@ -190,6 +190,7 @@ function MainPanel({
           categories={categories}
           onCompleteSession={onPlanSession}
           onSelectTask={onSelectTask}
+          onToggleTask={onToggleTask}
           selectedTaskId={selectedTaskId}
           tasks={tasks}
           timeBlocks={timeBlocks}

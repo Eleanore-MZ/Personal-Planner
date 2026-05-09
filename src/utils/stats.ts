@@ -26,6 +26,13 @@ export type StatsDateRange = {
   label: string;
 };
 
+export type YearStatsCoverageWindow = {
+  dayCount: number;
+  end: Date;
+  start: Date;
+  weekCount: number;
+};
+
 export type CategoryHoursDatum = {
   categoryId: string | null;
   categoryName: string;
@@ -134,25 +141,14 @@ export type SleepAveragePolicy = "logged-days" | "period-days";
 
 export type YearHeatmapDay = {
   date: string;
-  activeHours: number;
+  productiveHours: number;
+  trackedHours: number;
+  sleepHours: number;
   abandonedHours: number;
-  pomodoroHours: number;
-  completedTasks: number;
-  dueTasks: number;
-  overdueTasks: number;
+  focusHours: number;
   timeBlocksCount: number;
+  topStatsGroupName: string | null;
   topCategoryName: string | null;
-};
-
-export type YearTotals = {
-  createdTasks: number;
-  completedTasks: number;
-  overdueTasks: number;
-  timeBlocksCount: number;
-  totalPlannedHours: number;
-  studyHours: number;
-  classHours: number;
-  restHours: number;
 };
 
 const dayLabelFormatter = new Intl.DateTimeFormat("en-US", {
@@ -353,6 +349,64 @@ export function getTimeBlocksInRange(
     const endsAt = new Date(block.endsAt).getTime();
     return endsAt > start.getTime() && startsAt < end.getTime();
   });
+}
+
+export function getYearStatsCoverageWindow(
+  timeBlocks: TimeBlock[],
+  year: number,
+  currentDate = new Date(),
+): YearStatsCoverageWindow | null {
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  const meaningfulBlocks = timeBlocks.filter((block) => {
+    if (isAllDayBlock(block)) {
+      return false;
+    }
+
+    const startsAt = new Date(block.startsAt).getTime();
+    const endsAt = new Date(block.endsAt).getTime();
+    return endsAt > yearStart.getTime() && startsAt < yearEnd.getTime();
+  });
+
+  if (meaningfulBlocks.length === 0) {
+    return null;
+  }
+
+  const firstBlockTime = Math.min(
+    ...meaningfulBlocks.map((block) =>
+      Math.max(new Date(block.startsAt).getTime(), yearStart.getTime()),
+    ),
+  );
+  const lastBlockTime = Math.max(
+    ...meaningfulBlocks.map((block) =>
+      Math.min(new Date(block.endsAt).getTime() - 1, yearEnd.getTime() - 1),
+    ),
+  );
+  const coverageStart = startOfDay(new Date(firstBlockTime));
+  const currentYear = currentDate.getFullYear();
+  const todayInYear = new Date(
+    year,
+    currentDate.getFullYear() === year ? currentDate.getMonth() : 11,
+    currentDate.getFullYear() === year ? currentDate.getDate() : 31,
+  );
+  const coverageEnd = startOfDay(
+    currentYear === year
+      ? new Date(
+          Math.min(Math.max(todayInYear.getTime(), coverageStart.getTime()), yearEnd.getTime() - 1),
+        )
+      : new Date(lastBlockTime),
+  );
+  const dayCount = Math.max(
+    1,
+    Math.floor((coverageEnd.getTime() - coverageStart.getTime()) / oneDayMs) + 1,
+  );
+
+  return {
+    dayCount,
+    end: coverageEnd,
+    start: coverageStart,
+    weekCount: Math.max(dayCount / 7, 1 / 7),
+  };
 }
 
 export function getTasksDueInRange(tasks: Task[], start: Date, end: Date) {
@@ -989,6 +1043,79 @@ export function calculateWeeklyStatsGroupHours(
   });
 }
 
+export function calculateMonthlyStatsGroupHours(
+  timeBlocks: TimeBlock[],
+  year: number,
+  categories: Category[],
+  statsGroups: StatsGroup[],
+  timeMode: StatsTimeMode = "active",
+): DailyGroupHoursDatum[] {
+  const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const sortedGroups = [...statsGroups].sort(
+    (first, second) => first.sortOrder - second.sortOrder,
+  );
+  const otherGroup =
+    sortedGroups.find((group) => group.name.toLowerCase() === "other") ??
+    otherTimeGroupDefinition;
+  const groupDefinitions = [
+    ...sortedGroups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+    })),
+    ...(sortedGroups.some((group) => group.id === otherGroup.id)
+      ? []
+      : [otherGroup]),
+  ];
+  const groupByCategoryId = new Map<string, StatsGroup>();
+
+  sortedGroups.forEach((group) => {
+    group.categoryIds.forEach((categoryId) => {
+      groupByCategoryId.set(categoryId, group);
+    });
+  });
+
+  const getGroupForBlock = (block: TimeBlock) => {
+    const category = categoryById.get(block.categoryId);
+    return category ? groupByCategoryId.get(category.id) ?? otherGroup : otherGroup;
+  };
+
+  return Array.from({ length: 12 }, (_, month) => {
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 1);
+    const minutesByGroup = new Map<string, number>();
+
+    selectedBlocks.forEach((block) => {
+      const minutes = getOverlappingMinutes(block, monthStart, monthEnd);
+
+      if (minutes <= 0) {
+        return;
+      }
+
+      const group = getGroupForBlock(block);
+      minutesByGroup.set(group.id, (minutesByGroup.get(group.id) ?? 0) + minutes);
+    });
+
+    const segments = groupDefinitions
+      .map<DailyGroupHoursSegment>((group) => ({
+        groupId: group.id,
+        groupName: group.name,
+        color: group.color,
+        hours: (minutesByGroup.get(group.id) ?? 0) / 60,
+      }))
+      .filter((segment) => segment.hours > 0);
+    const hours = segments.reduce((total, segment) => total + segment.hours, 0);
+
+    return {
+      date: monthStart.toISOString(),
+      label: shortMonthFormatter.format(monthStart),
+      hours,
+      segments,
+    };
+  });
+}
+
 export function calculateSleepStats(
   timeBlocks: TimeBlock[],
   categories: Category[],
@@ -1213,9 +1340,9 @@ export function calculateStatsSummary(
 }
 
 export function buildYearHeatmapData(
-  tasks: Task[],
   timeBlocks: TimeBlock[],
   categories: Category[],
+  statsGroups: StatsGroup[],
   year: number,
 ) {
   const days: YearHeatmapDay[] = [];
@@ -1225,18 +1352,42 @@ export function buildYearHeatmapData(
     const dayStart = startOfDay(date);
     const dayEnd = addCalendarDays(dayStart, 1);
     const dayBlocks = getBlocksForDay(timeBlocks, dayStart);
-    const dueTasks = getTasksDueInRange(tasks, dayStart, dayEnd);
-    const categoryHours = calculateCategoryHours(dayBlocks, categories);
+    const trackedBlocks = dayBlocks.filter(
+      (block) => isActiveBlock(block) && !isAllDayBlock(block),
+    );
+    const productiveBlocks = filterBlocksByStatsGroupProductiveTime(
+      trackedBlocks,
+      categories,
+      statsGroups,
+    );
+    const abandonedBlocks = dayBlocks.filter(
+      (block) => isAbandonedBlock(block) && !isAllDayBlock(block),
+    );
+    const categoryHours = calculateCategoryHours(trackedBlocks, categories);
+    const timeGroupHours = calculateTimeGroupHours(
+      trackedBlocks,
+      categories,
+      statsGroups,
+    );
+    const sleepStats = calculateSleepStats(
+      trackedBlocks,
+      categories,
+      statsGroups,
+      dayStart,
+      dayEnd,
+      "period-days",
+    );
 
     days.push({
       date: dayStart.toISOString(),
-      activeHours: calculateActualHours(dayBlocks),
-      abandonedHours: calculateSkippedHours(dayBlocks),
-      pomodoroHours: calculatePomodoroHours(dayBlocks),
-      completedTasks: dueTasks.filter(isTaskComplete).length,
-      dueTasks: dueTasks.length,
-      overdueTasks: getOverdueTasks(dueTasks, dayEnd).length,
+      productiveHours: calculateActualHours(productiveBlocks),
+      trackedHours: calculateActualHours(trackedBlocks),
+      sleepHours: sleepStats.totalHours,
+      abandonedHours: calculateSkippedHours(abandonedBlocks),
+      focusHours: calculatePomodoroHours(trackedBlocks),
       timeBlocksCount: dayBlocks.length,
+      topStatsGroupName:
+        timeGroupHours.find((group) => group.hours > 0)?.name ?? null,
       topCategoryName:
         categoryHours.find((category) => category.hours > 0)?.categoryName ??
         null,
@@ -1252,28 +1403,24 @@ export function getHeatmapValue(
   day: YearHeatmapDay,
   metric: StatsHeatmapMetric,
 ) {
-  if (metric === "active_hours") {
-    return day.activeHours;
+  if (metric === "productive_hours") {
+    return day.productiveHours;
+  }
+
+  if (metric === "tracked_hours") {
+    return day.trackedHours;
+  }
+
+  if (metric === "sleep_hours") {
+    return day.sleepHours;
   }
 
   if (metric === "abandoned_hours") {
     return day.abandonedHours;
   }
 
-  if (metric === "pomodoro_hours") {
-    return day.pomodoroHours;
-  }
-
-  if (metric === "completed_tasks") {
-    return day.completedTasks;
-  }
-
-  if (metric === "due_tasks") {
-    return day.dueTasks;
-  }
-
-  if (metric === "overdue_tasks") {
-    return day.overdueTasks;
+  if (metric === "focus_hours") {
+    return day.focusHours;
   }
 
   return day.timeBlocksCount;

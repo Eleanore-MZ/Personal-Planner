@@ -1,7 +1,6 @@
 export type MonthActivityDay = {
   date: string;
   dayOfMonth: number;
-  focusHours: number;
   productiveHours: number;
   trackedHours: number;
 };
@@ -15,6 +14,7 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   weekday: "short",
 });
+const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function getIntensity(productiveHours: number, maxHours: number) {
   if (productiveHours <= 0) {
@@ -27,6 +27,26 @@ function getIntensity(productiveHours: number, maxHours: number) {
 function MonthActivityMap({ days }: MonthActivityMapProps) {
   const maxHours = Math.max(...days.map((day) => day.productiveHours), 1);
   const hasData = days.some((day) => day.productiveHours > 0);
+  const leadingEmptyDays = days.length > 0 ? new Date(days[0].date).getDay() : 0;
+  const cells = [
+    ...Array.from({ length: leadingEmptyDays }, (_, index) => ({
+      id: `empty-start-${index}`,
+      type: "empty" as const,
+    })),
+    ...days.map((day) => ({
+      day,
+      id: day.date,
+      type: "day" as const,
+    })),
+  ];
+  const trailingEmptyDays = (7 - (cells.length % 7)) % 7;
+  const calendarCells = [
+    ...cells,
+    ...Array.from({ length: trailingEmptyDays }, (_, index) => ({
+      id: `empty-end-${index}`,
+      type: "empty" as const,
+    })),
+  ];
 
   return (
     <section className="stats-card month-activity-card">
@@ -39,8 +59,18 @@ function MonthActivityMap({ days }: MonthActivityMapProps) {
 
       {days.length > 0 ? (
         <>
-          <div className="month-activity-strip">
-            {days.map((day) => {
+          <div className="month-activity-weekdays">
+            {weekdayLabels.map((weekday) => (
+              <span key={weekday}>{weekday}</span>
+            ))}
+          </div>
+          <div className="month-activity-calendar">
+            {calendarCells.map((cell) => {
+              if (cell.type === "empty") {
+                return <div className="month-activity-empty-cell" key={cell.id} />;
+              }
+
+              const { day } = cell;
               const intensity = getIntensity(day.productiveHours, maxHours);
               const date = new Date(day.date);
 
@@ -52,9 +82,14 @@ function MonthActivityMap({ days }: MonthActivityMapProps) {
                     1,
                   )}h\nTracked: ${day.trackedHours.toFixed(
                     1,
-                  )}h\nFocus: ${day.focusHours.toFixed(1)}h`}
+                  )}h`}
                 >
-                  <span>{day.dayOfMonth}</span>
+                  <span className="month-activity-date">{day.dayOfMonth}</span>
+                  <strong className="month-activity-hours">
+                    {day.productiveHours > 0
+                      ? `${day.productiveHours.toFixed(1)}h`
+                      : "0h"}
+                  </strong>
                 </div>
               );
             })}

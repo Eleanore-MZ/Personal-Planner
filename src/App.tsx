@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import "./App.css";
 import CommandPalette from "./components/CommandPalette";
 import InspectorPanel from "./components/InspectorPanel";
 import MainPanel from "./components/MainPanel";
+import ResizeHandle from "./components/ResizeHandle";
 import Sidebar from "./components/Sidebar";
 import TopToolbar from "./components/TopToolbar";
 import type { Category, StatsGroup, Task, TimeBlock } from "./types/domain";
@@ -24,6 +26,7 @@ import type {
   CreateTimeBlockInput,
   RecurringUpdateScope,
 } from "./types/plannerApi";
+import { useResizablePanels } from "./hooks/useResizablePanels";
 
 const defaultSettings: AppSettings = {
   weekStartDay: "monday",
@@ -90,7 +93,7 @@ function App() {
     blockKind: "all",
     blockOutcome: "all",
     blockSource: "all",
-    heatmapMetric: "active_hours",
+    heatmapMetric: "productive_hours",
     range: "month",
     selectedDateIso: new Date().toISOString(),
     timeMode: "active",
@@ -106,6 +109,18 @@ function App() {
   const [loadError, setLoadError] = useState<string | undefined>();
   const [pendingRecurringUpdate, setPendingRecurringUpdate] =
     useState<PendingRecurringUpdate>();
+  const {
+    activeResizeSide,
+    constraints: resizeConstraints,
+    leftWidth,
+    resetWidth,
+    rightWidth,
+    startResize,
+  } = useResizablePanels();
+  const appStyle = {
+    "--left-sidebar-width": `${leftWidth}px`,
+    "--right-sidebar-width": `${rightWidth}px`,
+  } as CSSProperties;
   const dateTitle = useMemo(
     () => formatCalendarTitle(currentDate, activeView),
     [activeView, currentDate],
@@ -491,13 +506,23 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div
+      className={`app${activeResizeSide ? " resizing-panels" : ""}`}
+      style={appStyle}
+    >
       <Sidebar
         activeItem={activeItem}
         categories={categories}
         selectedCalendarCategoryId={selectedCalendarCategoryId}
         onSelectItem={setActiveItem}
         onSelectCalendarCategory={setSelectedCalendarCategoryId}
+      />
+      <ResizeHandle
+        active={activeResizeSide === "left"}
+        label={`Resize navigation sidebar. Minimum ${resizeConstraints.left.min}px, maximum ${resizeConstraints.left.max}px.`}
+        onDoubleClick={() => resetWidth("left")}
+        onPointerDown={startResize("left")}
+        side="left"
       />
 
       <main className="workspace">
@@ -548,6 +573,13 @@ function App() {
             onSelectStatsDate={setSelectedStatsDate}
             onOpenFocusPage={() => setActiveItem("pomodoro")}
             onUpdateSettings={handleUpdateSettings}
+          />
+          <ResizeHandle
+            active={activeResizeSide === "right"}
+            label={`Resize inspector sidebar. Minimum ${resizeConstraints.right.min}px, maximum ${resizeConstraints.right.max}px.`}
+            onDoubleClick={() => resetWidth("right")}
+            onPointerDown={startResize("right")}
+            side="right"
           />
           <InspectorPanel
             activeItem={activeItem}

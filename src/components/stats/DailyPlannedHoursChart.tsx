@@ -7,6 +7,7 @@ export type PlannedHoursDatum = {
 };
 
 type DailyPlannedHoursChartProps = {
+  className?: string;
   compact?: boolean;
   data: PlannedHoursDatum[];
   emptyMessage?: string;
@@ -17,6 +18,7 @@ type DailyPlannedHoursChartProps = {
 };
 
 function DailyPlannedHoursChart({
+  className,
   compact = false,
   data,
   emptyMessage = "No block time for this period under the current filters.",
@@ -74,7 +76,7 @@ function DailyPlannedHoursChart({
   const shouldShowInsights = showInsights && legendItems.length > 0;
 
   return (
-    <section className="stats-card">
+    <section className={`stats-card${className ? ` ${className}` : ""}`}>
       <div className="stats-card-header">
         <div>
           <div className="panel-kicker">{kicker}</div>

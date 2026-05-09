@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { StatsHeatmapMetric } from "../../types/app";
 import { statsHeatmapMetrics } from "../../data/stats";
 import {
@@ -9,6 +10,7 @@ import { formatDate } from "../../utils/date";
 import { isSameCalendarDay } from "../../utils/calendar";
 
 type YearHeatmapProps = {
+  children?: ReactNode;
   data: YearHeatmapDay[];
   metric: StatsHeatmapMetric;
   selectedDate?: Date;
@@ -18,7 +20,16 @@ type YearHeatmapProps = {
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
 
+function formatHeatmapValue(metric: StatsHeatmapMetric, value: number) {
+  if (metric === "time_blocks_count") {
+    return Math.round(value).toString();
+  }
+
+  return `${value.toFixed(1)}h`;
+}
+
 function YearHeatmap({
+  children,
   data,
   metric,
   selectedDate,
@@ -81,10 +92,11 @@ function YearHeatmap({
             }
 
             const value = getHeatmapValue(cell, metric);
+            const formattedValue = formatHeatmapValue(metric, value);
             const date = new Date(cell.date);
             return (
               <button
-                aria-label={`${formatDate(date)}: ${metricLabel} ${value.toFixed(1)}`}
+                aria-label={`${formatDate(date)}: ${metricLabel} ${formattedValue}`}
                 className={`heatmap-day intensity-${getHeatmapIntensity(
                   value,
                   maxValue,
@@ -95,7 +107,7 @@ function YearHeatmap({
                 }`}
                 key={cell.date}
                 onClick={() => onSelectDate(date)}
-                title={`${formatDate(date)}: ${metricLabel} ${value.toFixed(1)}`}
+                title={`${formatDate(date)}: ${metricLabel} ${formattedValue}`}
                 type="button"
               />
             );
@@ -110,6 +122,9 @@ function YearHeatmap({
         ))}
         <span>More</span>
       </div>
+      {children ? (
+        <div className="year-heatmap-attached-panel">{children}</div>
+      ) : null}
     </section>
   );
 }

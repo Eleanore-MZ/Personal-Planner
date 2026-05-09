@@ -34,12 +34,11 @@ export type StatsBlockSourceFilter =
   | "imported";
 
 export type StatsHeatmapMetric =
-  | "active_hours"
+  | "productive_hours"
+  | "tracked_hours"
+  | "sleep_hours"
   | "abandoned_hours"
-  | "pomodoro_hours"
-  | "completed_tasks"
-  | "due_tasks"
-  | "overdue_tasks"
+  | "focus_hours"
   | "time_blocks_count";
 
 export type StatsFilters = {

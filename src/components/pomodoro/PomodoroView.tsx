@@ -2,6 +2,7 @@ import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import PomodoroPanel from "./PomodoroPanel";
 import { formatDateTimeRange } from "../../utils/date";
+import { isTaskComplete } from "../../utils/tasks";
 
 type PomodoroViewProps = {
   categories: Category[];
@@ -10,6 +11,7 @@ type PomodoroViewProps = {
   timeBlocks: TimeBlock[];
   onCompleteSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
   onSelectTask: (taskId: string) => void;
+  onToggleTask: (taskId: string) => void | Promise<void>;
 };
 
 function PomodoroView({
@@ -19,8 +21,10 @@ function PomodoroView({
   timeBlocks,
   onCompleteSession,
   onSelectTask,
+  onToggleTask,
 }: PomodoroViewProps) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  const openTasks = tasks.filter((task) => !isTaskComplete(task));
   const recentPomodoros = timeBlocks
     .filter((block) => block.source === "pomodoro")
     .sort(
@@ -36,6 +40,7 @@ function PomodoroView({
         <PomodoroPanel
           categories={categories}
           onCompleteSession={onCompleteSession}
+          onMarkTaskDone={onToggleTask}
           selectedTask={selectedTask}
           tasks={tasks}
         />
@@ -50,8 +55,8 @@ function PomodoroView({
             </div>
           </div>
           <div className="focus-task-list">
-            {tasks.length > 0 ? (
-              tasks.map((task) => (
+            {openTasks.length > 0 ? (
+              openTasks.map((task) => (
                 <button
                   className={`mini-block${
                     selectedTaskId === task.id ? " selected" : ""
@@ -65,7 +70,7 @@ function PomodoroView({
                 </button>
               ))
             ) : (
-              <div className="empty-state">No tasks available.</div>
+              <div className="empty-state">No open tasks available.</div>
             )}
           </div>
         </section>

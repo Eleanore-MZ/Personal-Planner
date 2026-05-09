@@ -1,6 +1,7 @@
 import type { TimeGroupDatum } from "../../utils/stats";
 
 type TimeGroupsSummaryProps = {
+  emptyMessage?: string;
   groups: TimeGroupDatum[];
   metricLabel: string;
 };
@@ -8,7 +9,11 @@ type TimeGroupsSummaryProps = {
 const ringRadius = 44;
 const ringCircumference = 2 * Math.PI * ringRadius;
 
-function TimeGroupsSummary({ groups, metricLabel }: TimeGroupsSummaryProps) {
+function TimeGroupsSummary({
+  emptyMessage = "No tracked time groups for this week under the current filters.",
+  groups,
+  metricLabel,
+}: TimeGroupsSummaryProps) {
   const visibleGroups = groups.filter((group) => group.hours > 0);
   const totalHours = visibleGroups.reduce((total, group) => total + group.hours, 0);
   const hasTrackedTime = totalHours > 0;
@@ -85,9 +90,7 @@ function TimeGroupsSummary({ groups, metricLabel }: TimeGroupsSummaryProps) {
           </div>
         </div>
       ) : (
-        <div className="empty-state">
-          No tracked time groups for this week under the current filters.
-        </div>
+        <div className="empty-state">{emptyMessage}</div>
       )}
     </section>
   );

@@ -25,9 +25,7 @@ import { formatDate, formatDateTimeRange } from "../utils/date";
 import {
   formatMinutes,
   formatTaskDueDate,
-  groupTasksByDueStatus,
   isTaskComplete,
-  type DueGroupId,
 } from "../utils/tasks";
 import {
   getCurrentPeriodDate,
@@ -40,10 +38,73 @@ import {
   formatRecurrenceLabel,
   getCategoryAccentColor,
   getBlocksForDay,
+  addCalendarDays,
+  addCalendarMonths,
   isAllDayBlock,
   isSameCalendarDay,
+  startOfDay,
+  startOfWeek,
 } from "../utils/calendar";
 import { SegmentedControl, ToggleRow } from "./ui/ChoiceControls";
+
+type TaskSidebarScope = "week" | "month" | "all";
+
+type TaskSidebarGroup = {
+  id: string;
+  title: string;
+  tasks: Task[];
+  defaultCollapsed?: boolean;
+};
+
+const taskSidebarScopeKey = "planner:taskSidebarScope";
+
+const readTaskSidebarScope = (): TaskSidebarScope => {
+  try {
+    const storedScope = localStorage.getItem(taskSidebarScopeKey);
+    return storedScope === "week" ||
+      storedScope === "month" ||
+      storedScope === "all"
+      ? storedScope
+      : "week";
+  } catch {
+    return "week";
+  }
+};
+
+const taskSidebarScopeOptions: Array<{
+  value: TaskSidebarScope;
+  label: string;
+}> = [
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "all", label: "All" },
+];
+
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
+
+const monthRangeFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+});
+
+const formatSidebarWeekRange = (start: Date, end: Date) =>
+  `${shortDateFormatter.format(start)} - ${formatDate(end)}`;
+
+const getTaskDueDate = (task: Task) =>
+  task.dueDate ? startOfDay(new Date(task.dueDate)) : undefined;
+
+const isTaskCanceled = (task: Task) => task.status === "canceled";
+
+const orderTasksByDueDate = (tasks: Task[]) =>
+  [...tasks].sort((firstTask, secondTask) => {
+    const firstDue = getTaskDueDate(firstTask)?.getTime() ?? Number.POSITIVE_INFINITY;
+    const secondDue =
+      getTaskDueDate(secondTask)?.getTime() ?? Number.POSITIVE_INFINITY;
+    return firstDue - secondDue || firstTask.title.localeCompare(secondTask.title);
+  });
 
 type InspectorPanelProps = {
   activeItem: NavItemId;
@@ -204,16 +265,12 @@ function InspectorPanel({
   const [statsGroupDrafts, setStatsGroupDrafts] = useState<StatsGroup[]>([]);
   const [isStatsGroupsDialogOpen, setIsStatsGroupsDialogOpen] = useState(false);
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<
-    Record<DueGroupId, boolean>
-  >({
-    overdue: false,
-    today: false,
-    tomorrow: false,
-    week: false,
-    later: false,
-    none: false,
-  });
+    Record<string, boolean>
+  >({});
   const [taskCategoryFilter, setTaskCategoryFilter] = useState("all");
+  const [taskSidebarScope, setTaskSidebarScope] =
+    useState<TaskSidebarScope>(readTaskSidebarScope);
+  const [taskSidebarDate, setTaskSidebarDate] = useState(() => new Date());
   const section = sectionPlaceholders[activeItem];
   const hiddenCalendarCategories = categories.filter(
     (category) => category.hiddenFromCalendar,
@@ -261,24 +318,187 @@ function InspectorPanel({
     () =>
       tasks.filter(
         (task) =>
-          taskCategoryFilter === "all" ||
-          task.categoryId === taskCategoryFilter,
+          !isTaskCanceled(task) &&
+          (taskCategoryFilter === "all" ||
+            task.categoryId === taskCategoryFilter),
       ),
     [taskCategoryFilter, tasks],
   );
-  const incompleteSidebarTasks = useMemo(
-    () => filteredSidebarTasks.filter((task) => !isTaskComplete(task)),
-    [filteredSidebarTasks],
-  );
-  const taskDueGroups = useMemo(
-    () => groupTasksByDueStatus(incompleteSidebarTasks),
-    [incompleteSidebarTasks],
-  );
+  const taskSidebarRange = useMemo(() => {
+    if (taskSidebarScope === "all") {
+      return undefined;
+    }
+
+    if (taskSidebarScope === "month") {
+      const start = startOfDay(
+        new Date(taskSidebarDate.getFullYear(), taskSidebarDate.getMonth(), 1),
+      );
+      const end = startOfDay(
+        new Date(taskSidebarDate.getFullYear(), taskSidebarDate.getMonth() + 1, 0),
+      );
+      return { start, end };
+    }
+
+    const start = startOfWeek(taskSidebarDate, weekStartDay);
+    return { start, end: addCalendarDays(start, 6) };
+  }, [taskSidebarDate, taskSidebarScope, weekStartDay]);
+  const today = startOfDay(new Date());
+  const visibleSidebarTasks = useMemo(() => {
+    if (taskSidebarScope === "all" || !taskSidebarRange) {
+      return filteredSidebarTasks;
+    }
+
+    return filteredSidebarTasks.filter((task) => {
+      const dueDate = getTaskDueDate(task);
+      if (!dueDate) {
+        return false;
+      }
+
+      const isInRange =
+        dueDate >= taskSidebarRange.start && dueDate <= taskSidebarRange.end;
+      const isOverdueOpen = dueDate < today && !isTaskComplete(task);
+      return isInRange || isOverdueOpen;
+    });
+  }, [filteredSidebarTasks, taskSidebarRange, taskSidebarScope, today]);
+  const taskDueGroups = useMemo<TaskSidebarGroup[]>(() => {
+    const openVisibleTasks = visibleSidebarTasks.filter(
+      (task) => !isTaskComplete(task),
+    );
+    const overdueTasks = orderTasksByDueDate(
+      openVisibleTasks.filter((task) => {
+        const dueDate = getTaskDueDate(task);
+        return dueDate ? dueDate < today : false;
+      }),
+    );
+
+    if (taskSidebarScope === "all") {
+      return [
+        {
+          id: "overdue",
+          title: "Overdue",
+          tasks: overdueTasks,
+        },
+        {
+          id: "upcoming",
+          title: "Upcoming",
+          tasks: orderTasksByDueDate(
+            openVisibleTasks.filter((task) => {
+              const dueDate = getTaskDueDate(task);
+              return dueDate ? dueDate >= today : false;
+            }),
+          ),
+        },
+        {
+          id: "none",
+          title: "No Due Date",
+          tasks: orderTasksByDueDate(
+            openVisibleTasks.filter((task) => !getTaskDueDate(task)),
+          ),
+        },
+        {
+          id: "completed",
+          title: "Completed",
+          tasks: orderTasksByDueDate(visibleSidebarTasks.filter(isTaskComplete)),
+          defaultCollapsed: true,
+        },
+      ];
+    }
+
+    if (!taskSidebarRange) {
+      return [];
+    }
+
+    if (taskSidebarScope === "month") {
+      const groups: TaskSidebarGroup[] = [
+        { id: "overdue", title: "Overdue", tasks: overdueTasks },
+      ];
+      let cursor = startOfWeek(taskSidebarRange.start, weekStartDay);
+      let index = 1;
+      while (cursor <= taskSidebarRange.end) {
+        const weekStart = new Date(cursor);
+        const weekEnd = addCalendarDays(weekStart, 6);
+        const clampedStart =
+          weekStart < taskSidebarRange.start ? taskSidebarRange.start : weekStart;
+        const clampedEnd =
+          weekEnd > taskSidebarRange.end ? taskSidebarRange.end : weekEnd;
+        groups.push({
+          id: `month-week-${index}`,
+          title: `Week ${index}: ${shortDateFormatter.format(clampedStart)} - ${shortDateFormatter.format(clampedEnd)}`,
+          tasks: orderTasksByDueDate(
+            visibleSidebarTasks.filter((task) => {
+              const dueDate = getTaskDueDate(task);
+              if (!dueDate) {
+                return false;
+              }
+
+              return (
+                dueDate >= clampedStart &&
+                dueDate <= clampedEnd
+              );
+            }),
+          ),
+        });
+        cursor = addCalendarDays(cursor, 7);
+        index += 1;
+      }
+      return groups;
+    }
+
+    return [
+      { id: "overdue", title: "Overdue", tasks: overdueTasks },
+      {
+        id: "today",
+        title: "Due Today",
+        tasks: orderTasksByDueDate(
+          visibleSidebarTasks.filter((task) => {
+            const dueDate = getTaskDueDate(task);
+            return dueDate ? dueDate.getTime() === today.getTime() : false;
+          }),
+        ),
+      },
+      {
+        id: "tomorrow",
+        title: "Due Tomorrow",
+        tasks: orderTasksByDueDate(
+          visibleSidebarTasks.filter((task) => {
+            const dueDate = getTaskDueDate(task);
+            const tomorrow = addCalendarDays(today, 1);
+            return dueDate ? dueDate.getTime() === tomorrow.getTime() : false;
+          }),
+        ),
+      },
+      {
+        id: "week",
+        title: "Due This Week",
+        tasks: orderTasksByDueDate(
+          visibleSidebarTasks.filter((task) => {
+            const dueDate = getTaskDueDate(task);
+            if (!dueDate) {
+              return false;
+            }
+            const tomorrow = addCalendarDays(today, 1);
+            return (
+              dueDate >= taskSidebarRange.start &&
+              dueDate <= taskSidebarRange.end &&
+              dueDate.getTime() !== today.getTime() &&
+              dueDate.getTime() !== tomorrow.getTime()
+            );
+          }),
+        ),
+      },
+    ];
+  }, [
+    taskSidebarRange,
+    taskSidebarScope,
+    today,
+    visibleSidebarTasks,
+    weekStartDay,
+  ]);
   const categoryProgressRings = useMemo(
     () =>
       categories
         .map((category) => {
-          const categoryTasks = filteredSidebarTasks.filter(
+          const categoryTasks = visibleSidebarTasks.filter(
             (task) => task.categoryId === category.id,
           );
           const completedTasks = categoryTasks.filter(isTaskComplete).length;
@@ -289,9 +509,15 @@ function InspectorPanel({
           };
         })
         .filter((ring) => ring.totalTasks > 0),
-    [categories, filteredSidebarTasks],
+    [categories, visibleSidebarTasks],
   );
-  const completedTaskCount = filteredSidebarTasks.filter(isTaskComplete).length;
+  const completedTaskCount = visibleSidebarTasks.filter(isTaskComplete).length;
+  const taskSidebarRangeLabel =
+    taskSidebarScope === "all" || !taskSidebarRange
+      ? "All tasks"
+      : taskSidebarScope === "month"
+        ? monthRangeFormatter.format(taskSidebarRange.start)
+        : formatSidebarWeekRange(taskSidebarRange.start, taskSidebarRange.end);
   const assignedStatsCategoryIds = new Set(
     statsGroupDrafts.flatMap((group) => group.categoryIds),
   );
@@ -314,7 +540,23 @@ function InspectorPanel({
       selectedDateIso: date.toISOString(),
     });
   };
-  const toggleTaskGroup = (groupId: DueGroupId) => {
+  const updateTaskSidebarScope = (scope: TaskSidebarScope) => {
+    setTaskSidebarScope(scope);
+    try {
+      localStorage.setItem(taskSidebarScopeKey, scope);
+    } catch {
+      // Sidebar preference writes are best-effort.
+    }
+  };
+  const shiftTaskSidebarRange = (step: number) => {
+    setTaskSidebarDate((currentDate) =>
+      taskSidebarScope === "month"
+        ? addCalendarMonths(currentDate, step)
+        : addCalendarDays(currentDate, step * 7),
+    );
+  };
+  const resetTaskSidebarRange = () => setTaskSidebarDate(new Date());
+  const toggleTaskGroup = (groupId: string) => {
     setCollapsedTaskGroups((currentGroups) => ({
       ...currentGroups,
       [groupId]: !currentGroups[groupId],
@@ -542,21 +784,57 @@ function InspectorPanel({
           }`}
         >
           <div className="section-title">Due list</div>
-          <div className="task-sidebar-summary">
+          <div className="range-switcher compact" aria-label="Task due scope">
+            {taskSidebarScopeOptions.map((option) => (
+              <button
+                className={taskSidebarScope === option.value ? "active" : ""}
+                key={option.value}
+                onClick={() => updateTaskSidebarScope(option.value)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="task-sidebar-range-nav">
+            <button
+              className="icon-button"
+              disabled={taskSidebarScope === "all"}
+              onClick={() => shiftTaskSidebarRange(-1)}
+              type="button"
+            >
+              Prev
+            </button>
             <div>
-              <strong>
-                {completedTaskCount}/{filteredSidebarTasks.length}
-              </strong>
-              <span>completed</span>
+              <strong>{taskSidebarRangeLabel}</strong>
             </div>
+            <button
+              className="icon-button"
+              disabled={taskSidebarScope === "all"}
+              onClick={() => shiftTaskSidebarRange(1)}
+              type="button"
+            >
+              Next
+            </button>
+          </div>
+          {taskSidebarScope !== "all" ? (
+            <button
+              className="toolbar-button task-sidebar-current-button"
+              onClick={resetTaskSidebarRange}
+              type="button"
+            >
+              Current {taskSidebarScope}
+            </button>
+          ) : null}
+          <div className="task-sidebar-summary">
             <svg
               aria-hidden="true"
               className="task-sidebar-progress"
-              viewBox="0 0 56 56"
+              viewBox="0 0 96 96"
             >
               {categoryProgressRings.length > 0 ? (
                 categoryProgressRings.map((ring, index) => {
-                  const radius = Math.max(5, 24 - index * 3);
+                  const radius = Math.max(12, 42 - index * 5);
                   const circumference = 2 * Math.PI * radius;
                   const progress = ring.completedTasks / ring.totalTasks;
 
@@ -564,14 +842,14 @@ function InspectorPanel({
                     <g key={ring.category.id}>
                       <circle
                         className="task-sidebar-progress-track"
-                        cx="28"
-                        cy="28"
+                        cx="48"
+                        cy="48"
                         r={radius}
                       />
                       <circle
                         className="task-sidebar-progress-ring"
-                        cx="28"
-                        cy="28"
+                        cx="48"
+                        cy="48"
                         r={radius}
                         stroke={getCategoryAccentColor(ring.category.color)}
                         strokeDasharray={`${circumference} ${circumference}`}
@@ -583,12 +861,18 @@ function InspectorPanel({
               ) : (
                 <circle
                   className="task-sidebar-progress-track"
-                  cx="28"
-                  cy="28"
-                  r="22"
+                  cx="48"
+                  cy="48"
+                  r="38"
                 />
               )}
             </svg>
+            <div>
+              <strong>
+                {completedTaskCount}/{visibleSidebarTasks.length}
+              </strong>
+              <span>completed</span>
+            </div>
           </div>
 
           <div className="task-sidebar-controls">
@@ -609,7 +893,7 @@ function InspectorPanel({
           </div>
 
           <div className="todo-groups inspector-todo-groups">
-            {incompleteSidebarTasks.length > 0 ? (
+            {visibleSidebarTasks.length > 0 ? (
               taskDueGroups.map((group) => (
                 <section className="todo-group" key={group.id}>
                   <button
@@ -619,7 +903,11 @@ function InspectorPanel({
                   >
                     <span
                       className={`collapse-indicator${
-                        collapsedTaskGroups[group.id] ? " collapsed" : ""
+                        (collapsedTaskGroups[group.id] ??
+                        group.defaultCollapsed ??
+                        false)
+                          ? " collapsed"
+                          : ""
                       }`}
                     >
                       v
@@ -627,7 +915,7 @@ function InspectorPanel({
                     <span>{group.title}</span>
                     <span className="count-badge">{group.tasks.length}</span>
                   </button>
-                  {!collapsedTaskGroups[group.id] ? (
+                  {!(collapsedTaskGroups[group.id] ?? group.defaultCollapsed ?? false) ? (
                     <div className="todo-card-list">
                       {group.tasks.length > 0 ? (
                         group.tasks.map((task) => (
@@ -655,7 +943,11 @@ function InspectorPanel({
                               type="button"
                             >
                               <strong>{task.title}</strong>
-                              <small>{formatTaskDueDate(task)}</small>
+                              <small>
+                                {formatTaskDueDate(task)}
+                                {" · "}
+                                {getCategoryName(categories, task.categoryId)}
+                              </small>
                             </button>
                           </div>
                         ))
@@ -667,7 +959,7 @@ function InspectorPanel({
                 </section>
               ))
             ) : (
-              <div className="todo-empty">No open tasks match the current filters.</div>
+              <div className="todo-empty">No tasks match this due window.</div>
             )}
           </div>
         </div>
