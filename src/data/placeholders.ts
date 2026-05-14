@@ -8,7 +8,7 @@ export const viewPlaceholders: Record<
     title: "Week View",
     eyebrow: "Planning grid",
     description:
-      "The weekly planner will show time blocks across the current week.",
+      "Plan time blocks across the current week.",
     cells: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   },
   month: {
@@ -34,7 +34,7 @@ export const sectionPlaceholders: Record<
     title: "Tasks",
     kicker: "Work queue",
     description:
-      "Project tasks and lightweight planning states will be added later.",
+      "Track open tasks, blocked work, and completed items.",
   },
   pomodoro: {
     title: "Focus",
@@ -46,18 +46,18 @@ export const sectionPlaceholders: Record<
     title: "Stats",
     kicker: "Personal analytics",
     description:
-      "Planning totals, completion trends, and category balance will appear here.",
+      "Review your time, tasks, and routines.",
   },
   categories: {
     title: "Categories",
     kicker: "Color system",
     description:
-      "Category labels, colors, and defaults will be configured in this space.",
+      "Manage category colors, defaults, and Stats inclusion.",
   },
   settings: {
     title: "Settings",
     kicker: "Local preferences",
     description:
-      "Theme, calendar defaults, and local app settings will be managed here.",
+      "Tune calendar defaults and local app preferences.",
   },
 };

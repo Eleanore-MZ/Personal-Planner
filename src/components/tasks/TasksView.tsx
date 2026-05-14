@@ -94,7 +94,7 @@ function TasksView({
                   />
                 ))
               ) : (
-                <div className="todo-empty">No open tasks.</div>
+                <div className="todo-empty">No open tasks yet.</div>
               )}
             </div>
           </section>
@@ -135,7 +135,7 @@ function TasksView({
                     />
                   ))
                 ) : (
-                  <div className="todo-empty">No completed tasks.</div>
+                  <div className="todo-empty">No completed tasks yet.</div>
                 )}
               </div>
             ) : null}

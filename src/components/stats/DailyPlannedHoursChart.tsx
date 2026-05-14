@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { DailyGroupHoursSegment } from "../../utils/stats";
 
 export type PlannedHoursDatum = {
@@ -21,15 +22,15 @@ function DailyPlannedHoursChart({
   className,
   compact = false,
   data,
-  emptyMessage = "No block time for this period under the current filters.",
+  emptyMessage = "No tracked time for this period.",
   highlightMax = false,
   kicker = "Daily plan",
   showInsights = true,
-  title = "Planned hours this week",
+  title = "Tracked time this week",
 }: DailyPlannedHoursChartProps) {
-  const maxHours = Math.max(...data.map((item) => item.hours), 1);
-  const hasData = data.some((item) => item.hours > 0);
-  const activeDays = data.filter((day) => day.hours > 0);
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const legendItems = Array.from(
     data
       .flatMap((day) => day.segments ?? [])
@@ -41,6 +42,29 @@ function DailyPlannedHoursChart({
       }, new Map<string, DailyGroupHoursSegment>())
       .values(),
   );
+  const chartData = useMemo(
+    () =>
+      data.map((day) => {
+        if (!day.segments) {
+          return day;
+        }
+
+        const segments = day.segments.filter(
+          (segment) => !hiddenGroupIds.has(segment.groupId),
+        );
+
+        return {
+          ...day,
+          hours: segments.reduce((total, segment) => total + segment.hours, 0),
+          segments,
+        };
+      }),
+    [data, hiddenGroupIds],
+  );
+  const maxHours = Math.max(...chartData.map((item) => item.hours), 1);
+  const hasData = chartData.some((item) => item.hours > 0);
+  const hasSourceData = data.some((item) => item.hours > 0);
+  const activeDays = chartData.filter((day) => day.hours > 0);
   const busiestDay = activeDays.reduce<PlannedHoursDatum | null>(
     (current, day) => (!current || day.hours > current.hours ? day : current),
     null,
@@ -49,7 +73,7 @@ function DailyPlannedHoursChart({
     (current, day) => (!current || day.hours < current.hours ? day : current),
     null,
   );
-  const groupTotals = data
+  const groupTotals = chartData
     .flatMap((day) => day.segments ?? [])
     .reduce((totals, segment) => {
       const current = totals.get(segment.groupId) ?? {
@@ -64,7 +88,7 @@ function DailyPlannedHoursChart({
   const topGroup = Array.from(groupTotals.values()).sort(
     (first, second) => second.hours - first.hours,
   )[0];
-  const strongestPair = data
+  const strongestPair = chartData
     .flatMap((day) =>
       (day.segments ?? []).map((segment) => ({
         dayLabel: day.label,
@@ -73,7 +97,18 @@ function DailyPlannedHoursChart({
       })),
     )
     .sort((first, second) => second.hours - first.hours)[0];
-  const shouldShowInsights = showInsights && legendItems.length > 0;
+  const shouldShowInsights = showInsights && legendItems.length > 0 && hasData;
+  const toggleGroup = (groupId: string) => {
+    setHiddenGroupIds((currentGroupIds) => {
+      const nextGroupIds = new Set(currentGroupIds);
+      if (nextGroupIds.has(groupId)) {
+        nextGroupIds.delete(groupId);
+      } else {
+        nextGroupIds.add(groupId);
+      }
+      return nextGroupIds;
+    });
+  };
 
   return (
     <section className={`stats-card${className ? ` ${className}` : ""}`}>
@@ -84,10 +119,10 @@ function DailyPlannedHoursChart({
         </div>
       </div>
 
-      {hasData ? (
+      {hasSourceData ? (
         <>
           <div className={`vertical-chart${compact ? " compact" : ""}`}>
-            {data.map((day, index) => (
+            {chartData.map((day, index) => (
               <div
                 className={`vertical-chart-column${
                   highlightMax && day.hours === maxHours ? " busiest" : ""
@@ -135,12 +170,22 @@ function DailyPlannedHoursChart({
           </div>
           {legendItems.length > 0 ? (
             <div className="stacked-chart-legend">
-              {legendItems.map((segment) => (
-                <span key={segment.groupId}>
-                  <i style={{ background: segment.color }} />
-                  {segment.groupName}
-                </span>
-              ))}
+              {legendItems.map((segment) => {
+                const isIncluded = !hiddenGroupIds.has(segment.groupId);
+                return (
+                  <button
+                    aria-pressed={isIncluded}
+                    className={!isIncluded ? "muted" : undefined}
+                    key={segment.groupId}
+                    onClick={() => toggleGroup(segment.groupId)}
+                    title={`${isIncluded ? "Hide" : "Show"} ${segment.groupName}`}
+                    type="button"
+                  >
+                    <i style={{ background: segment.color }} />
+                    {segment.groupName}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
           {shouldShowInsights ? (

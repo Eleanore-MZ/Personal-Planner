@@ -20,7 +20,7 @@ const chartPadding = {
 
 function HourOfDayChart({
   data,
-  emptyMessage = "No hourly time for this week under the current filters.",
+  emptyMessage = "No hourly tracked time for this period.",
   metricLabel,
   summaries,
   title,

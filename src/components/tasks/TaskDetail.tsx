@@ -66,7 +66,7 @@ function TaskDetail({
   if (!task) {
     return (
       <aside className="task-detail-panel">
-        <div className="empty-state">Select a task to see full details.</div>
+        <div className="empty-state">Select a task to inspect it.</div>
       </aside>
     );
   }
@@ -235,26 +235,6 @@ function TaskDetail({
       </div>
 
       <section className="task-detail-section">
-        <h3>Planned time blocks</h3>
-        {plannedSessions.length > 0 ? (
-          <div className="planned-session-list">
-            {plannedSessions.map((session) => (
-              <div className="planned-session" key={session.id}>
-                <strong>{session.title}</strong>
-                <span>
-                  {isAllDayBlock(session)
-                    ? "All day"
-                    : formatDateTimeRange(session.startsAt, session.endsAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-state">No linked time blocks yet.</div>
-        )}
-      </section>
-
-      <section className="task-detail-section">
         <div className="task-detail-section-header">
           <h3>Subtasks</h3>
           {task.subtasks && task.subtasks.length > 0 ? (
@@ -318,7 +298,7 @@ function TaskDetail({
             ))}
           </div>
         ) : (
-          <div className="empty-state">No subtasks yet.</div>
+          <div className="empty-state">No subtasks.</div>
         )}
       </section>
 
@@ -331,6 +311,26 @@ function TaskDetail({
           value={notes}
         />
       </label>
+
+      <section className="task-detail-section">
+        <h3>Planned time blocks</h3>
+        {plannedSessions.length > 0 ? (
+          <div className="planned-session-list">
+            {plannedSessions.map((session) => (
+              <div className="planned-session" key={session.id}>
+                <strong>{session.title}</strong>
+                <span>
+                  {isAllDayBlock(session)
+                    ? "All day"
+                    : formatDateTimeRange(session.startsAt, session.endsAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state">No linked time blocks.</div>
+        )}
+      </section>
     </aside>
   );
 }

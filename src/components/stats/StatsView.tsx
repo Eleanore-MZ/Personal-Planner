@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { StatsFilters, WeekStartDay } from "../../types/app";
 import type { Category, StatsGroup, Task, TimeBlock } from "../../types/domain";
 import { addCalendarDays } from "../../utils/calendar";
@@ -294,16 +294,16 @@ function StatsView({
       ),
     [categories, range.start, statsGroups, trackedActiveBlocks],
   );
-  const yearMonthlyProductiveGroupHours = useMemo(
+  const yearMonthlyTrackedGroupHours = useMemo(
     () =>
       calculateMonthlyStatsGroupHours(
-        productiveActiveBlocks,
+        trackedActiveBlocks,
         range.start.getFullYear(),
         categories,
         statsGroups,
         "active",
       ),
-    [categories, productiveActiveBlocks, range.start, statsGroups],
+    [categories, range.start, statsGroups, trackedActiveBlocks],
   );
   const weekDailyProductiveHoursData = useMemo(
     () =>
@@ -472,10 +472,19 @@ function StatsView({
       ),
     [categories, filteredBlocks, range.start, statsGroups],
   );
+  const [previewStatsDate, setPreviewStatsDate] = useState<Date | undefined>();
   const selectedHeatmapDay = useMemo(
     () => getSelectedHeatmapDay(heatmapData, selectedStatsDate),
     [heatmapData, selectedStatsDate],
   );
+  const previewHeatmapDay = useMemo(
+    () =>
+      previewStatsDate
+        ? getSelectedHeatmapDay(heatmapData, previewStatsDate)
+        : undefined,
+    [heatmapData, previewStatsDate],
+  );
+  const visibleHeatmapDay = previewHeatmapDay ?? selectedHeatmapDay;
   const completionRate =
     summary.dueTasks > 0
       ? Math.round((summary.completedTasks / summary.dueTasks) * 100)
@@ -613,7 +622,7 @@ function StatsView({
       value:
         sleepStats.totalHours > 0
           ? `${sleepStats.averageHoursPerDay.toFixed(1)}h/day`
-          : "No sleep data",
+          : "No sleep logged",
       detail: `${sleepDaysDetail}${sleepRangeDetail}`,
     },
     {
@@ -658,7 +667,7 @@ function StatsView({
       value:
         yearCoverageSleepStats && yearCoverageSleepStats.totalHours > 0
           ? `${yearCoverageSleepStats.averageHoursPerDay.toFixed(1)}h/day`
-          : "No sleep data",
+          : "No sleep logged",
       detail: yearCoverageSleepStats
         ? `${yearCoverageSleepStats.daysLogged} days logged - avg over ${yearCoverageSleepStats.averageDayCount} recorded days`
         : "No recorded days yet",
@@ -706,7 +715,7 @@ function StatsView({
       value:
         sleepStats.totalHours > 0
           ? `${sleepStats.averageHoursPerDay.toFixed(1)}h/day`
-          : "No sleep data",
+          : "No sleep logged",
       detail: `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days${sleepRangeDetail}`,
     },
     {
@@ -741,7 +750,7 @@ function StatsView({
       ? weekDailyProductiveHoursData
       : filters.range === "month"
         ? monthWeeklyProductiveHoursData
-        : yearMonthlyProductiveGroupHours;
+        : yearMonthlyTrackedGroupHours;
   const categoryChartTitle =
     filters.range === "week"
       ? "Hours by category"
@@ -753,7 +762,7 @@ function StatsView({
       ? "Tracked time by weekday"
       : filters.range === "month"
         ? "Tracked time by week"
-      : "Productive time by month";
+      : "Tracked total time by stats group";
   const hasProductiveTime = summary.activeHours > 0;
 
   const weekStatsContent = (
@@ -762,8 +771,7 @@ function StatsView({
         <StatsKpiGrid items={kpis} />
         {!hasProductiveTime ? (
           <div className="empty-state stats-empty-state">
-            No productive time for this week. Add active time blocks, adjust
-            the sidebar filters, or mark relevant Stats Groups as productive.
+            No productive time for this week.
           </div>
         ) : null}
       </StatsSection>
@@ -776,7 +784,7 @@ function StatsView({
           />
           <CategoryHoursChart
             data={categoryChartData}
-            emptyMessage="No tracked category data for this week under the current filters."
+            emptyMessage="No tracked time for this week."
             hideZeroHours
             kicker="Tracked categories"
             title={categoryChartTitle}
@@ -789,7 +797,7 @@ function StatsView({
           <DailyPlannedHoursChart
             compact
             data={dailyChartData}
-            emptyMessage="No tracked time for this week under the current filters."
+            emptyMessage="No tracked time for this week."
             highlightMax
             kicker="Weekday tracked time"
             title={dailyChartTitle}
@@ -798,8 +806,8 @@ function StatsView({
             data={weekHourOfDayData}
             emptyMessage={
               filters.showAllTrackedTime
-                ? "No tracked hourly time for this week under the current filters."
-                : "No productive hourly time for this week under the current filters."
+                ? "No tracked time for this week."
+                : "No productive time for this week."
             }
             metricLabel={filters.showAllTrackedTime ? "tracked" : "productive"}
             summaries={weekTimeOfDaySummary}
@@ -827,8 +835,7 @@ function StatsView({
         <StatsKpiGrid items={kpis} />
         {!hasProductiveTime ? (
           <div className="empty-state stats-empty-state">
-            No productive time for this month. Add active time blocks or mark
-            relevant Stats Groups as productive.
+            No productive time for this month.
           </div>
         ) : null}
       </StatsSection>
@@ -841,7 +848,7 @@ function StatsView({
           />
           <CategoryHoursChart
             data={monthCategoryHours}
-            emptyMessage="No tracked category data for this month under the current filters."
+            emptyMessage="No tracked time for this month."
             hideZeroHours
             kicker="Tracked categories"
             title="Hours by category"
@@ -855,7 +862,7 @@ function StatsView({
             className="monthly-week-chart"
             compact
             data={monthWeeklyProductiveHoursData}
-            emptyMessage="No tracked time for this month under the current filters."
+            emptyMessage="No tracked time for this month."
             kicker="Monthly trend"
             showInsights={false}
             title="Tracked time by week"
@@ -869,7 +876,7 @@ function StatsView({
           <MonthActivityMap days={monthActivityDays} />
           <HourOfDayChart
             data={monthHourOfDayData}
-            emptyMessage="No productive hourly time for this month under the current filters."
+            emptyMessage="No productive time for this month."
             metricLabel="productive"
             summaries={monthTimeOfDaySummary}
             title="Productive time by hour of day"
@@ -887,21 +894,20 @@ function StatsView({
 
       {!hasPeriodData ? (
         <div className="empty-state stats-empty-state">
-          No stats data for this period. Adjust the sidebar filters or add
-          time blocks and due tasks in the selected range.
+          No tracked time or due tasks for this year.
         </div>
       ) : null}
 
       <StatsSection kicker="Time breakdown" title="Time breakdown">
         <div className="stats-section-grid time-breakdown-grid">
           <TimeGroupsSummary
-            emptyMessage="No tracked time groups for this year under the current filters."
+            emptyMessage="No tracked time for this year."
             groups={yearTimeGroups}
             metricLabel="Tracked Time"
           />
           <CategoryHoursChart
             data={categoryChartData}
-            emptyMessage="No tracked category data for this year under the current filters."
+            emptyMessage="No tracked time for this year."
             hideZeroHours
             kicker="Tracked categories"
             title={categoryChartTitle}
@@ -914,14 +920,14 @@ function StatsView({
           <SleepByDayChart
             ariaLabel="Average sleep hours by month"
             data={yearSleepByMonthData}
-            emptyMessage="No sleep blocks logged for this year."
+            emptyMessage="No sleep logged for this year."
             kicker="Sleep rhythm"
             pointLabelPrefix="Month"
             title="Avg sleep by month"
           />
           <HourOfDayChart
             data={yearHourOfDayData}
-            emptyMessage="No productive hourly time for this year under the current filters."
+            emptyMessage="No productive time for this year."
             metricLabel="productive"
             summaries={yearTimeOfDaySummary}
             title="Productive time by hour of day"
@@ -933,7 +939,7 @@ function StatsView({
         <DailyPlannedHoursChart
           className="year-monthly-productive-chart"
           data={dailyChartData}
-          emptyMessage="No productive time for this year under the current filters."
+          emptyMessage="No tracked time for this year."
           kicker="Monthly trend"
           showInsights={false}
           title={dailyChartTitle}
@@ -941,11 +947,15 @@ function StatsView({
         <YearHeatmap
           data={heatmapData}
           metric={filters.heatmapMetric}
+          onPreviewDate={setPreviewStatsDate}
           onSelectDate={onSelectStatsDate}
           selectedDate={selectedStatsDate}
           year={range.start.getFullYear()}
         >
-          <SelectedDayStats day={selectedHeatmapDay} />
+          <SelectedDayStats
+            day={visibleHeatmapDay}
+            mode={previewHeatmapDay ? "preview" : "selected"}
+          />
         </YearHeatmap>
         <YearSummaryPanel
           averageSleepHours={yearCoverageSleepStats?.averageHoursPerDay ?? 0}

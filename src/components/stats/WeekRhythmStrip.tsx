@@ -84,7 +84,7 @@ function WeekRhythmStrip({ days, title = "Weekly rhythm" }: WeekRhythmStripProps
         </div>
       ) : (
         <div className="empty-state">
-          No tracked rhythm data for this week under the current filters.
+          No tracked time for this week.
         </div>
       )}
     </section>

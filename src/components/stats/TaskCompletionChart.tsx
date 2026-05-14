@@ -43,7 +43,7 @@ function TaskCompletionChart({ emptyMessage, stats }: TaskCompletionChartProps) 
         </div>
       ) : (
         <div className="empty-state">
-          {emptyMessage ?? "No task status data for this period."}
+          {emptyMessage ?? "No task status changes for this period."}
         </div>
       )}
     </section>

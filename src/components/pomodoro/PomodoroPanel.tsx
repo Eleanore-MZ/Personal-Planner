@@ -360,6 +360,43 @@ function PomodoroPanel({
     cycleCompletedFocusCount % Math.max(1, cycleLongBreakAfter) === 0
       ? cycleLongBreakMinutes
       : cycleShortBreakMinutes;
+  const visibleRemainingSeconds = isBreakSurface
+    ? breakRemainingSeconds
+    : remainingSeconds;
+  const visibleTotalSeconds = Math.max(
+    1,
+    ((isBreakSurface
+      ? activeBreakSession?.durationMinutes
+      : activeSession?.durationMinutes) ??
+      (isBreakSurface ? nextCycleBreakMinutes : durationMinutes)) * 60,
+  );
+  const rawTimerProgress =
+    (isBreakSurface
+      ? breakTimerState === "completed"
+      : timerState === "completed")
+      ? 1
+      : hasLockedTimer
+        ? 1 - visibleRemainingSeconds / visibleTotalSeconds
+        : 0;
+  const timerProgress = Math.min(1, Math.max(0, rawTimerProgress));
+  const timerProgressPercent = Math.round(timerProgress * 100);
+  const timerRingRadius = 78;
+  const timerRingCircumference = 2 * Math.PI * timerRingRadius;
+  const timerRingOffset = timerRingCircumference * (1 - timerProgress);
+  const timerVisualState = isBreakSurface ? breakTimerState : timerState;
+  const timerModeLabel = isBreakSurface
+    ? breakTimerState === "completed"
+      ? "Complete"
+      : breakTimerState === "paused"
+        ? "Paused"
+        : "Break"
+    : timerState === "completed"
+      ? "Complete"
+      : timerState === "paused"
+        ? "Paused"
+      : timerState === "idle"
+        ? "Ready"
+        : "Focusing";
 
   useEffect(() => {
     if (hasRestoredSessionRef.current) {
@@ -994,8 +1031,44 @@ function PomodoroPanel({
         </div>
       </div>
 
-      <div className="focus-timer-display" aria-live="polite">
-        {formatRemainingTime(isBreakSurface ? breakRemainingSeconds : remainingSeconds)}
+      <div
+        className={`focus-timer-display focus-timer-ring-display${
+          isBreakSurface ? " break-mode" : ""
+        } ${timerVisualState}`}
+        aria-live="polite"
+      >
+        <div
+          aria-label={`${timerModeLabel}: ${formatRemainingTime(
+            visibleRemainingSeconds,
+          )}, ${timerProgressPercent}% complete`}
+          className="focus-progress-ring"
+          role="img"
+        >
+          <svg
+            aria-hidden="true"
+            className="focus-progress-ring-svg"
+            viewBox="0 0 190 190"
+          >
+            <circle
+              className="focus-progress-ring-track"
+              cx="95"
+              cy="95"
+              r={timerRingRadius}
+            />
+            <circle
+              className="focus-progress-ring-value"
+              cx="95"
+              cy="95"
+              r={timerRingRadius}
+              strokeDasharray={timerRingCircumference}
+              strokeDashoffset={timerRingOffset}
+            />
+          </svg>
+          <div className="focus-progress-ring-center">
+            <span>{timerModeLabel}</span>
+            <strong>{formatRemainingTime(visibleRemainingSeconds)}</strong>
+          </div>
+        </div>
       </div>
       {timerState === "paused" ? (
         <div className="focus-status-indicator">Paused</div>

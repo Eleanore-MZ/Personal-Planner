@@ -3,15 +3,18 @@ import { formatDate } from "../../utils/date";
 
 type SelectedDayStatsProps = {
   day?: YearHeatmapDay;
+  mode?: "selected" | "preview";
 };
 
-function SelectedDayStats({ day }: SelectedDayStatsProps) {
+function SelectedDayStats({ day, mode = "selected" }: SelectedDayStatsProps) {
   return (
     <section className="selected-day-stats">
       <div className="selected-day-stats-header">
         <div>
-          <div className="panel-kicker">Selected day</div>
-          <h3>{day ? formatDate(day.date) : "No day selected"}</h3>
+          <div className="panel-kicker">
+            {mode === "preview" ? "Preview day" : "Selected day"}
+          </div>
+          <h3>{day ? formatDate(day.date) : "Select a day"}</h3>
         </div>
       </div>
       {day ? (
@@ -40,13 +43,9 @@ function SelectedDayStats({ day }: SelectedDayStatsProps) {
             <span>Top category</span>
             <strong>{day.topCategoryName ?? "None"}</strong>
           </div>
-          <div className="selected-day-metric">
-            <span>Time blocks count</span>
-            <strong>{day.timeBlocksCount}</strong>
-          </div>
         </div>
       ) : (
-        <div className="empty-state">Select a day in the heatmap.</div>
+        <div className="empty-state">Select a day to inspect it.</div>
       )}
     </section>
   );

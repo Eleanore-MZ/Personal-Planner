@@ -10,6 +10,7 @@ import type {
   StatsFilters,
   WeekStartDay,
 } from "../types/app";
+import type { CSSProperties } from "react";
 import type {
   Category,
   StatsGroup,
@@ -23,6 +24,7 @@ import TimeBlockDialog from "./calendar/TimeBlockDialog";
 import { getCategoryName } from "../utils/categories";
 import { formatDate, formatDateTimeRange } from "../utils/date";
 import {
+  findTaskCategory,
   formatMinutes,
   formatTaskDueDate,
   isTaskComplete,
@@ -37,6 +39,7 @@ import {
 import {
   formatRecurrenceLabel,
   getCategoryAccentColor,
+  getCategoryColorValues,
   getBlocksForDay,
   addCalendarDays,
   addCalendarMonths,
@@ -48,6 +51,7 @@ import {
 import { SegmentedControl, ToggleRow } from "./ui/ChoiceControls";
 
 type TaskSidebarScope = "week" | "month" | "all";
+type TaskSidebarTaskMode = "open" | "completed";
 
 type TaskSidebarGroup = {
   id: string;
@@ -57,6 +61,7 @@ type TaskSidebarGroup = {
 };
 
 const taskSidebarScopeKey = "planner:taskSidebarScope";
+const taskSidebarTaskModeKey = "planner:taskSidebarTaskMode";
 
 const readTaskSidebarScope = (): TaskSidebarScope => {
   try {
@@ -71,6 +76,15 @@ const readTaskSidebarScope = (): TaskSidebarScope => {
   }
 };
 
+const readTaskSidebarTaskMode = (): TaskSidebarTaskMode => {
+  try {
+    const storedMode = localStorage.getItem(taskSidebarTaskModeKey);
+    return storedMode === "completed" ? "completed" : "open";
+  } catch {
+    return "open";
+  }
+};
+
 const taskSidebarScopeOptions: Array<{
   value: TaskSidebarScope;
   label: string;
@@ -79,6 +93,20 @@ const taskSidebarScopeOptions: Array<{
   { value: "month", label: "Month" },
   { value: "all", label: "All" },
 ];
+
+const taskSidebarTaskModeOptions: Array<{
+  value: TaskSidebarTaskMode;
+  label: string;
+}> = [
+  { value: "open", label: "Tasks" },
+  { value: "completed", label: "Completed tasks" },
+];
+
+const taskSidebarProgressCenter = 60;
+const taskSidebarProgressOuterRadius = 52;
+const taskSidebarProgressRadiusStep = 8;
+const taskSidebarProgressMinRadius = 16;
+const taskSidebarProgressFallbackRadius = 46;
 
 const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -104,6 +132,14 @@ const orderTasksByDueDate = (tasks: Task[]) =>
     const secondDue =
       getTaskDueDate(secondTask)?.getTime() ?? Number.POSITIVE_INFINITY;
     return firstDue - secondDue || firstTask.title.localeCompare(secondTask.title);
+  });
+
+const orderCompletedTasksByDueDate = (tasks: Task[]) =>
+  [...tasks].sort((firstTask, secondTask) => {
+    const firstDue = getTaskDueDate(firstTask)?.getTime() ?? Number.NEGATIVE_INFINITY;
+    const secondDue =
+      getTaskDueDate(secondTask)?.getTime() ?? Number.NEGATIVE_INFINITY;
+    return secondDue - firstDue || firstTask.title.localeCompare(secondTask.title);
   });
 
 type InspectorPanelProps = {
@@ -268,6 +304,8 @@ function InspectorPanel({
     Record<string, boolean>
   >({});
   const [taskCategoryFilter, setTaskCategoryFilter] = useState("all");
+  const [taskSidebarTaskMode, setTaskSidebarTaskMode] =
+    useState<TaskSidebarTaskMode>(readTaskSidebarTaskMode);
   const [taskSidebarScope, setTaskSidebarScope] =
     useState<TaskSidebarScope>(readTaskSidebarScope);
   const [taskSidebarDate, setTaskSidebarDate] = useState(() => new Date());
@@ -360,7 +398,7 @@ function InspectorPanel({
       return isInRange || isOverdueOpen;
     });
   }, [filteredSidebarTasks, taskSidebarRange, taskSidebarScope, today]);
-  const taskDueGroups = useMemo<TaskSidebarGroup[]>(() => {
+  const openTaskDueGroups = useMemo<TaskSidebarGroup[]>(() => {
     const openVisibleTasks = visibleSidebarTasks.filter(
       (task) => !isTaskComplete(task),
     );
@@ -374,12 +412,12 @@ function InspectorPanel({
     if (taskSidebarScope === "all") {
       return [
         {
-          id: "overdue",
+          id: "open-overdue",
           title: "Overdue",
           tasks: overdueTasks,
         },
         {
-          id: "upcoming",
+          id: "open-upcoming",
           title: "Upcoming",
           tasks: orderTasksByDueDate(
             openVisibleTasks.filter((task) => {
@@ -389,17 +427,11 @@ function InspectorPanel({
           ),
         },
         {
-          id: "none",
+          id: "open-none",
           title: "No Due Date",
           tasks: orderTasksByDueDate(
             openVisibleTasks.filter((task) => !getTaskDueDate(task)),
           ),
-        },
-        {
-          id: "completed",
-          title: "Completed",
-          tasks: orderTasksByDueDate(visibleSidebarTasks.filter(isTaskComplete)),
-          defaultCollapsed: true,
         },
       ];
     }
@@ -410,7 +442,7 @@ function InspectorPanel({
 
     if (taskSidebarScope === "month") {
       const groups: TaskSidebarGroup[] = [
-        { id: "overdue", title: "Overdue", tasks: overdueTasks },
+        { id: "open-overdue", title: "Overdue", tasks: overdueTasks },
       ];
       let cursor = startOfWeek(taskSidebarRange.start, weekStartDay);
       let index = 1;
@@ -422,10 +454,10 @@ function InspectorPanel({
         const clampedEnd =
           weekEnd > taskSidebarRange.end ? taskSidebarRange.end : weekEnd;
         groups.push({
-          id: `month-week-${index}`,
+          id: `open-month-week-${index}`,
           title: `Week ${index}: ${shortDateFormatter.format(clampedStart)} - ${shortDateFormatter.format(clampedEnd)}`,
           tasks: orderTasksByDueDate(
-            visibleSidebarTasks.filter((task) => {
+            openVisibleTasks.filter((task) => {
               const dueDate = getTaskDueDate(task);
               if (!dueDate) {
                 return false;
@@ -445,22 +477,22 @@ function InspectorPanel({
     }
 
     return [
-      { id: "overdue", title: "Overdue", tasks: overdueTasks },
+      { id: "open-overdue", title: "Overdue", tasks: overdueTasks },
       {
-        id: "today",
+        id: "open-today",
         title: "Due Today",
         tasks: orderTasksByDueDate(
-          visibleSidebarTasks.filter((task) => {
+          openVisibleTasks.filter((task) => {
             const dueDate = getTaskDueDate(task);
             return dueDate ? dueDate.getTime() === today.getTime() : false;
           }),
         ),
       },
       {
-        id: "tomorrow",
+        id: "open-tomorrow",
         title: "Due Tomorrow",
         tasks: orderTasksByDueDate(
-          visibleSidebarTasks.filter((task) => {
+          openVisibleTasks.filter((task) => {
             const dueDate = getTaskDueDate(task);
             const tomorrow = addCalendarDays(today, 1);
             return dueDate ? dueDate.getTime() === tomorrow.getTime() : false;
@@ -468,10 +500,10 @@ function InspectorPanel({
         ),
       },
       {
-        id: "week",
+        id: "open-week",
         title: "Due This Week",
         tasks: orderTasksByDueDate(
-          visibleSidebarTasks.filter((task) => {
+          openVisibleTasks.filter((task) => {
             const dueDate = getTaskDueDate(task);
             if (!dueDate) {
               return false;
@@ -494,6 +526,77 @@ function InspectorPanel({
     visibleSidebarTasks,
     weekStartDay,
   ]);
+  const completedTaskDueGroups = useMemo<TaskSidebarGroup[]>(() => {
+    const completedVisibleTasks = visibleSidebarTasks.filter(isTaskComplete);
+
+    if (taskSidebarScope === "all" || !taskSidebarRange) {
+      return [
+        {
+          id: "completed-all",
+          title: "Completed",
+          tasks: orderCompletedTasksByDueDate(completedVisibleTasks),
+        },
+      ];
+    }
+
+    if (taskSidebarScope === "month") {
+      const groups: TaskSidebarGroup[] = [];
+      let cursor = startOfWeek(taskSidebarRange.start, weekStartDay);
+      let index = 1;
+      while (cursor <= taskSidebarRange.end) {
+        const weekStart = new Date(cursor);
+        const weekEnd = addCalendarDays(weekStart, 6);
+        const clampedStart =
+          weekStart < taskSidebarRange.start ? taskSidebarRange.start : weekStart;
+        const clampedEnd =
+          weekEnd > taskSidebarRange.end ? taskSidebarRange.end : weekEnd;
+
+        groups.push({
+          id: `completed-month-week-${index}`,
+          title: `Week ${index}: ${shortDateFormatter.format(clampedStart)} - ${shortDateFormatter.format(clampedEnd)}`,
+          tasks: orderCompletedTasksByDueDate(
+            completedVisibleTasks.filter((task) => {
+              const dueDate = getTaskDueDate(task);
+              return dueDate ? dueDate >= clampedStart && dueDate <= clampedEnd : false;
+            }),
+          ),
+        });
+        cursor = addCalendarDays(cursor, 7);
+        index += 1;
+      }
+      return groups;
+    }
+
+    return Array.from({ length: 7 }, (_, dayIndex) => {
+      const day = addCalendarDays(taskSidebarRange.start, dayIndex);
+      return {
+        id: `completed-day-${toDateInputValue(day)}`,
+        title: shortDateFormatter.format(day),
+        tasks: orderCompletedTasksByDueDate(
+          completedVisibleTasks.filter((task) => {
+            const dueDate = getTaskDueDate(task);
+            return dueDate ? dueDate.getTime() === day.getTime() : false;
+          }),
+        ),
+      };
+    });
+  }, [
+    taskSidebarRange,
+    taskSidebarScope,
+    visibleSidebarTasks,
+    weekStartDay,
+  ]);
+  const taskSidebarGroups =
+    taskSidebarTaskMode === "completed"
+      ? completedTaskDueGroups
+      : openTaskDueGroups;
+  const visibleTaskSidebarGroups = taskSidebarGroups.filter(
+    (group) => group.tasks.length > 0,
+  );
+  const taskSidebarEmptyMessage =
+    taskSidebarTaskMode === "completed"
+      ? "No completed tasks in this range."
+      : "No open tasks in this range.";
   const categoryProgressRings = useMemo(
     () =>
       categories
@@ -544,6 +647,14 @@ function InspectorPanel({
     setTaskSidebarScope(scope);
     try {
       localStorage.setItem(taskSidebarScopeKey, scope);
+    } catch {
+      // Sidebar preference writes are best-effort.
+    }
+  };
+  const updateTaskSidebarTaskMode = (mode: TaskSidebarTaskMode) => {
+    setTaskSidebarTaskMode(mode);
+    try {
+      localStorage.setItem(taskSidebarTaskModeKey, mode);
     } catch {
       // Sidebar preference writes are best-effort.
     }
@@ -772,9 +883,6 @@ function InspectorPanel({
       <div className="inspector-header">
         <div className="panel-kicker">Inspector</div>
         <h2>{section.title}</h2>
-        <p className="muted">
-          Select a calendar item to edit it here without opening a dialog.
-        </p>
       </div>
 
       {activeItem === "tasks" ? (
@@ -830,11 +938,15 @@ function InspectorPanel({
             <svg
               aria-hidden="true"
               className="task-sidebar-progress"
-              viewBox="0 0 96 96"
+              viewBox="0 0 120 120"
             >
               {categoryProgressRings.length > 0 ? (
                 categoryProgressRings.map((ring, index) => {
-                  const radius = Math.max(12, 42 - index * 5);
+                  const radius = Math.max(
+                    taskSidebarProgressMinRadius,
+                    taskSidebarProgressOuterRadius -
+                      index * taskSidebarProgressRadiusStep,
+                  );
                   const circumference = 2 * Math.PI * radius;
                   const progress = ring.completedTasks / ring.totalTasks;
 
@@ -842,18 +954,19 @@ function InspectorPanel({
                     <g key={ring.category.id}>
                       <circle
                         className="task-sidebar-progress-track"
-                        cx="48"
-                        cy="48"
+                        cx={taskSidebarProgressCenter}
+                        cy={taskSidebarProgressCenter}
                         r={radius}
                       />
                       <circle
                         className="task-sidebar-progress-ring"
-                        cx="48"
-                        cy="48"
+                        cx={taskSidebarProgressCenter}
+                        cy={taskSidebarProgressCenter}
                         r={radius}
                         stroke={getCategoryAccentColor(ring.category.color)}
                         strokeDasharray={`${circumference} ${circumference}`}
                         strokeDashoffset={circumference * (1 - progress)}
+                        strokeLinecap="butt"
                       />
                     </g>
                   );
@@ -861,9 +974,9 @@ function InspectorPanel({
               ) : (
                 <circle
                   className="task-sidebar-progress-track"
-                  cx="48"
-                  cy="48"
-                  r="38"
+                  cx={taskSidebarProgressCenter}
+                  cy={taskSidebarProgressCenter}
+                  r={taskSidebarProgressFallbackRadius}
                 />
               )}
             </svg>
@@ -873,6 +986,22 @@ function InspectorPanel({
               </strong>
               <span>completed</span>
             </div>
+          </div>
+
+          <div
+            className="range-switcher compact task-sidebar-mode-switcher"
+            aria-label="Task list mode"
+          >
+            {taskSidebarTaskModeOptions.map((option) => (
+              <button
+                className={taskSidebarTaskMode === option.value ? "active" : ""}
+                key={option.value}
+                onClick={() => updateTaskSidebarTaskMode(option.value)}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
 
           <div className="task-sidebar-controls">
@@ -893,8 +1022,8 @@ function InspectorPanel({
           </div>
 
           <div className="todo-groups inspector-todo-groups">
-            {visibleSidebarTasks.length > 0 ? (
-              taskDueGroups.map((group) => (
+            {visibleTaskSidebarGroups.length > 0 ? (
+              visibleTaskSidebarGroups.map((group) => (
                 <section className="todo-group" key={group.id}>
                   <button
                     className="todo-group-header"
@@ -918,48 +1047,65 @@ function InspectorPanel({
                   {!(collapsedTaskGroups[group.id] ?? group.defaultCollapsed ?? false) ? (
                     <div className="todo-card-list">
                       {group.tasks.length > 0 ? (
-                        group.tasks.map((task) => (
-                          <div
-                            className={`inspector-task-row${
-                              selectedTaskId === task.id ? " selected" : ""
-                            }${isTaskComplete(task) ? " complete" : ""}`}
-                            key={task.id}
-                          >
-                            <button
-                              aria-label={`Mark ${task.title} ${
-                                isTaskComplete(task)
-                                  ? "incomplete"
-                                  : "complete"
-                              }`}
-                              className={`completion-circle${
-                                isTaskComplete(task) ? " complete" : ""
-                              }`}
-                              onClick={() => void onToggleTask(task.id)}
-                              type="button"
-                            />
-                            <button
-                              className="inspector-task-row-body"
-                              onClick={() => onSelectTask(task.id)}
-                              type="button"
+                        group.tasks.map((task) => {
+                          const category = findTaskCategory(
+                            categories,
+                            task.categoryId,
+                          );
+                          const colors = getCategoryColorValues(category?.color);
+                          const categoryName = category?.name ?? "Uncategorized";
+
+                          return (
+                            <div
+                              className={`inspector-task-row${
+                                selectedTaskId === task.id ? " selected" : ""
+                              }${isTaskComplete(task) ? " complete" : ""}`}
+                              key={task.id}
+                              style={
+                                {
+                                  "--task-accent": colors.accent,
+                                  "--task-background": colors.background,
+                                  "--task-border": colors.border,
+                                } as CSSProperties
+                              }
                             >
-                              <strong>{task.title}</strong>
-                              <small>
-                                {formatTaskDueDate(task)}
-                                {" · "}
-                                {getCategoryName(categories, task.categoryId)}
-                              </small>
-                            </button>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="todo-empty">No tasks in this group.</div>
-                      )}
+                              <button
+                                aria-label={`Mark ${task.title} ${
+                                  isTaskComplete(task)
+                                    ? "incomplete"
+                                    : "complete"
+                                }`}
+                                className={`completion-circle${
+                                  isTaskComplete(task) ? " complete" : ""
+                                }`}
+                                onClick={() => void onToggleTask(task.id)}
+                                type="button"
+                              />
+                              <button
+                                className="inspector-task-row-body"
+                                onClick={() => onSelectTask(task.id)}
+                                type="button"
+                              >
+                                <strong>{task.title}</strong>
+                                <small className="inspector-task-meta">
+                                  <span>{categoryName}</span>
+                                  <span>{formatTaskDueDate(task)}</span>
+                                  <span className={`priority-pill priority-${task.priority}`}>
+                                    {task.priority}
+                                  </span>
+                                  <span>{task.status}</span>
+                                </small>
+                              </button>
+                            </div>
+                          );
+                        })
+                      ) : null}
                     </div>
                   ) : null}
                 </section>
               ))
             ) : (
-              <div className="todo-empty">No tasks match this due window.</div>
+              <div className="todo-empty">{taskSidebarEmptyMessage}</div>
             )}
           </div>
         </div>
@@ -1456,7 +1602,7 @@ function InspectorPanel({
               </div>
             </div>
           ) : (
-            <div className="empty-state">Select a day in the heatmap.</div>
+            <div className="empty-state">Select a day to inspect it.</div>
           )}
         </div>
       ) : (
@@ -1505,7 +1651,7 @@ function InspectorPanel({
             </div>
           </div>
           ) : (
-            <div className="empty-state">Select a time block to see details.</div>
+            <div className="empty-state">Select a time block to inspect it.</div>
           )}
         </div>
       )}

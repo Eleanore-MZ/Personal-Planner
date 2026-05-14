@@ -33,7 +33,7 @@ function CategoriesView({
         <div>
           <div className="panel-kicker">Persistent categories</div>
           <h2>Categories</h2>
-          <p>Create, edit, and delete local SQLite-backed categories.</p>
+          <p>Manage colors, defaults, and Stats inclusion.</p>
         </div>
         <div className="category-create-form compact-action-form">
           <button
@@ -48,8 +48,7 @@ function CategoriesView({
 
       {categories.length === 0 ? (
         <div className="empty-state">
-          No visible categories yet. Create one to color-code calendar blocks and
-          stats.
+          No categories yet.
         </div>
       ) : (
         <div className="category-grid">

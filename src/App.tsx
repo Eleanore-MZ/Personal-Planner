@@ -58,6 +58,12 @@ type PendingRecurringUpdate = {
   updatedBlock: TimeBlock;
 };
 
+type PendingRecurringDelete = {
+  occurrence: TimeBlock;
+};
+
+type RecurringDeleteScope = "this" | "future" | "all";
+
 const getExpansionRange = (date: Date) => {
   const start = new Date(date.getFullYear(), 0, 1);
   const end = new Date(date.getFullYear(), 11, 31, 23, 59, 59);
@@ -109,6 +115,8 @@ function App() {
   const [loadError, setLoadError] = useState<string | undefined>();
   const [pendingRecurringUpdate, setPendingRecurringUpdate] =
     useState<PendingRecurringUpdate>();
+  const [pendingRecurringDelete, setPendingRecurringDelete] =
+    useState<PendingRecurringDelete>();
   const {
     activeResizeSide,
     constraints: resizeConstraints,
@@ -368,6 +376,25 @@ function App() {
       seriesBlock?.recurrenceFrequency !== "none";
 
     if (isRecurringUpdate && currentBlock) {
+      const isAbandoningSingleOccurrence =
+        currentBlock.outcome !== "abandoned" &&
+        timeBlock.outcome === "abandoned";
+
+      if (isAbandoningSingleOccurrence) {
+        const snapshot = await window.plannerAPI.updateRecurringTimeBlock({
+          occurrence: currentBlock,
+          updatedBlock: timeBlock,
+          scope: "this",
+        });
+        setCategories(snapshot.categories);
+        setStatsGroups(snapshot.statsGroups);
+        setTasks(snapshot.tasks);
+        setTimeBlocks(snapshot.timeBlocks);
+        setSelectedBlockId(undefined);
+        setSelectedBlockIds([]);
+        return;
+      }
+
       setPendingRecurringUpdate({
         occurrence: currentBlock,
         updatedBlock: timeBlock,
@@ -418,6 +445,16 @@ function App() {
     const seriesId = selectedBlock
       ? getTimeBlockSeriesId(selectedBlock)
       : timeBlockId;
+    const seriesBlock = timeBlocks.find((block) => block.id === seriesId);
+    const isRecurringDelete =
+      Boolean(selectedBlock?.recurringTimeBlockId) ||
+      seriesBlock?.recurrenceFrequency !== "none";
+
+    if (selectedBlock && isRecurringDelete) {
+      setPendingRecurringDelete({ occurrence: selectedBlock });
+      return;
+    }
+
     await window.plannerAPI.deleteTimeBlock(seriesId);
     setTimeBlocks((currentBlocks) => {
       const nextBlocks = currentBlocks.filter(
@@ -429,6 +466,106 @@ function App() {
       );
       return nextBlocks;
     });
+  };
+
+  const applyRecurringTimeBlockDelete = async (
+    scope: RecurringDeleteScope,
+  ) => {
+    if (!pendingRecurringDelete) {
+      return;
+    }
+
+    const { occurrence } = pendingRecurringDelete;
+    const seriesId = getTimeBlockSeriesId(occurrence);
+    const seriesBlock = timeBlocks.find((block) => block.id === seriesId);
+    if (!seriesBlock) {
+      setPendingRecurringDelete(undefined);
+      return;
+    }
+
+    if (
+      scope === "all" ||
+      (scope === "future" &&
+        new Date(occurrence.startsAt).getTime() <=
+          new Date(seriesBlock.startsAt).getTime())
+    ) {
+      await window.plannerAPI.deleteTimeBlock(seriesId);
+      setTimeBlocks((currentBlocks) =>
+        currentBlocks.filter((block) => block.id !== seriesId),
+      );
+    } else {
+      const updatedSeries =
+        scope === "this"
+          ? await window.plannerAPI.updateTimeBlock({
+              ...seriesBlock,
+              recurrenceExceptions: [
+                ...new Set([
+                  ...(seriesBlock.recurrenceExceptions ?? []),
+                  occurrence.startsAt,
+                ]),
+              ],
+            })
+          : await window.plannerAPI.updateTimeBlock({
+              ...seriesBlock,
+              recurrenceEndMode: "on",
+              recurrenceEndDate: new Date(
+                new Date(occurrence.startsAt).getTime() - 1000,
+              ).toISOString(),
+              recurrenceCount: undefined,
+            });
+
+      setTimeBlocks((currentBlocks) =>
+        currentBlocks.map((block) =>
+          block.id === updatedSeries.id ? updatedSeries : block,
+        ),
+      );
+    }
+
+    setSelectedBlockId(undefined);
+    setSelectedBlockIds([]);
+    setPendingRecurringDelete(undefined);
+  };
+
+  const cancelRecurringTimeBlockDelete = () => {
+    setPendingRecurringDelete(undefined);
+  };
+
+  const handleDeleteSelectedTimeBlocks = async () => {
+    const selectedIds =
+      selectedBlockIds.length > 0
+        ? selectedBlockIds
+        : selectedBlockId
+          ? [selectedBlockId]
+          : [];
+
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    if (selectedIds.length === 1) {
+      await handleDeleteTimeBlock(selectedIds[0]);
+      return;
+    }
+
+    const deleteIds = [
+      ...new Set(
+        selectedIds.map((blockId) => {
+          const selectedBlock = visibleTimeBlocks.find(
+            (block) => block.id === blockId,
+          );
+          return selectedBlock ? getTimeBlockSeriesId(selectedBlock) : blockId;
+        }),
+      ),
+    ];
+
+    await Promise.all(
+      deleteIds.map((blockId) => window.plannerAPI.deleteTimeBlock(blockId)),
+    );
+    setTimeBlocks((currentBlocks) =>
+      currentBlocks.filter((block) => !deleteIds.includes(block.id)),
+    );
+    setSelectedBlockId(undefined);
+    setSelectedBlockIds([]);
   };
 
   useEffect(() => {
@@ -447,6 +584,7 @@ function App() {
 
       if (event.key === "Escape") {
         setIsCommandPaletteOpen(false);
+        setPendingRecurringDelete(undefined);
         isAwaitingGoKey = false;
         return;
       }
@@ -458,6 +596,17 @@ function App() {
 
       if (event.key === "ArrowRight") {
         handleNext();
+        return;
+      }
+
+      if (
+        activeItem === "calendar" &&
+        event.key === "Delete" &&
+        !pendingRecurringUpdate &&
+        !pendingRecurringDelete
+      ) {
+        event.preventDefault();
+        void handleDeleteSelectedTimeBlocks();
         return;
       }
 
@@ -480,6 +629,16 @@ function App() {
 
       if (key === "t") {
         handleToday();
+        return;
+      }
+
+      if (activeItem === "calendar" && key === "w") {
+        setActiveView("week");
+        return;
+      }
+
+      if (activeItem === "calendar" && key === "m") {
+        setActiveView("month");
         return;
       }
 
@@ -661,6 +820,52 @@ function App() {
               <button
                 className="toolbar-button primary-action"
                 onClick={() => void applyRecurringTimeBlockUpdate("all")}
+                type="button"
+              >
+                All Events In Series
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingRecurringDelete ? (
+        <div className="dialog-backdrop" role="presentation">
+          <section
+            aria-label="Delete recurring event"
+            className="fake-dialog recurrence-scope-dialog"
+          >
+            <div className="fake-dialog-header">
+              <div>
+                <div className="panel-kicker">Recurring event</div>
+                <h2>Delete this event from</h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={cancelRecurringTimeBlockDelete}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className="recurrence-scope-actions">
+              <button
+                className="toolbar-button"
+                onClick={() => void applyRecurringTimeBlockDelete("this")}
+                type="button"
+              >
+                Only This Event
+              </button>
+              <button
+                className="toolbar-button"
+                onClick={() => void applyRecurringTimeBlockDelete("future")}
+                type="button"
+              >
+                This And Following Events
+              </button>
+              <button
+                className="toolbar-button danger-action"
+                onClick={() => void applyRecurringTimeBlockDelete("all")}
                 type="button"
               >
                 All Events In Series

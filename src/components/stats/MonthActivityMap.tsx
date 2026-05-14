@@ -106,13 +106,13 @@ function MonthActivityMap({ days }: MonthActivityMapProps) {
           </div>
           {!hasData ? (
             <div className="empty-state month-activity-empty">
-              No productive time in this month under the current filters.
+              No productive time for this month.
             </div>
           ) : null}
         </>
       ) : (
         <div className="empty-state">
-          No days available for this month.
+          No days in this month.
         </div>
       )}
     </section>

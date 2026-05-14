@@ -13,6 +13,7 @@ type YearHeatmapProps = {
   children?: ReactNode;
   data: YearHeatmapDay[];
   metric: StatsHeatmapMetric;
+  onPreviewDate?: (date?: Date) => void;
   selectedDate?: Date;
   year: number;
   onSelectDate: (date: Date) => void;
@@ -32,6 +33,7 @@ function YearHeatmap({
   children,
   data,
   metric,
+  onPreviewDate,
   selectedDate,
   year,
   onSelectDate,
@@ -44,6 +46,7 @@ function YearHeatmap({
     statsHeatmapMetrics.find((metricOption) => metricOption.id === metric)?.label ??
     "Activity";
   const firstDay = data[0] ? new Date(data[0].date) : new Date(year, 0, 1);
+  const today = new Date();
   const leadingEmptyDays = firstDay.getDay();
   const cells = [
     ...Array.from({ length: leadingEmptyDays }, () => undefined),
@@ -94,19 +97,27 @@ function YearHeatmap({
             const value = getHeatmapValue(cell, metric);
             const formattedValue = formatHeatmapValue(metric, value);
             const date = new Date(cell.date);
+            const isSelected =
+              selectedDate && isSameCalendarDay(selectedDate, date);
+            const isCurrentDay = isSameCalendarDay(today, date);
             return (
               <button
                 aria-label={`${formatDate(date)}: ${metricLabel} ${formattedValue}`}
                 className={`heatmap-day intensity-${getHeatmapIntensity(
                   value,
                   maxValue,
-                )}${
-                  selectedDate && isSameCalendarDay(selectedDate, date)
-                    ? " selected"
-                    : ""
+                )}${isSelected ? " selected" : ""}${
+                  isCurrentDay ? " current-day" : ""
                 }`}
                 key={cell.date}
-                onClick={() => onSelectDate(date)}
+                onBlur={() => onPreviewDate?.()}
+                onClick={() => {
+                  onSelectDate(date);
+                  onPreviewDate?.();
+                }}
+                onFocus={() => onPreviewDate?.(date)}
+                onMouseEnter={() => onPreviewDate?.(date)}
+                onMouseLeave={() => onPreviewDate?.()}
                 title={`${formatDate(date)}: ${metricLabel} ${formattedValue}`}
                 type="button"
               />

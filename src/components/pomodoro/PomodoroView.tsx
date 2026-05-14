@@ -1,8 +1,14 @@
+import type { CSSProperties } from "react";
 import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import PomodoroPanel from "./PomodoroPanel";
 import { formatDateTimeRange } from "../../utils/date";
-import { isTaskComplete } from "../../utils/tasks";
+import { getCategoryColorValues } from "../../utils/calendar";
+import {
+  findTaskCategory,
+  formatTaskDueDate,
+  isTaskComplete,
+} from "../../utils/tasks";
 
 type PomodoroViewProps = {
   categories: Category[];
@@ -56,21 +62,48 @@ function PomodoroView({
           </div>
           <div className="focus-task-list">
             {openTasks.length > 0 ? (
-              openTasks.map((task) => (
-                <button
-                  className={`mini-block${
-                    selectedTaskId === task.id ? " selected" : ""
-                  }`}
-                  key={task.id}
-                  onClick={() => onSelectTask(task.id)}
-                  type="button"
-                >
-                  <span>{task.title}</span>
-                  <small>{task.status}</small>
-                </button>
-              ))
+              openTasks.map((task) => {
+                const category = findTaskCategory(categories, task.categoryId);
+                const colors = getCategoryColorValues(category?.color);
+                const categoryName = category?.name ?? "Uncategorized";
+
+                return (
+                  <div
+                    className={`inspector-task-row focus-task-row${
+                      selectedTaskId === task.id ? " selected" : ""
+                    }`}
+                    key={task.id}
+                    style={
+                      {
+                        "--task-accent": colors.accent,
+                        "--task-background": colors.background,
+                        "--task-border": colors.border,
+                      } as CSSProperties
+                    }
+                  >
+                    <button
+                      aria-label={`Mark ${task.title} complete`}
+                      className="completion-circle"
+                      onClick={() => void onToggleTask(task.id)}
+                      type="button"
+                    />
+                    <button
+                      className="inspector-task-row-body"
+                      onClick={() => onSelectTask(task.id)}
+                      type="button"
+                    >
+                      <strong>{task.title}</strong>
+                      <small className="inspector-task-meta">
+                        <span>{categoryName}</span>
+                        <span>{formatTaskDueDate(task)}</span>
+                        <span>{task.status}</span>
+                      </small>
+                    </button>
+                  </div>
+                );
+              })
             ) : (
-              <div className="empty-state">No open tasks available.</div>
+              <div className="empty-state">No open tasks.</div>
             )}
           </div>
         </section>
@@ -91,7 +124,7 @@ function PomodoroView({
                 </div>
               ))
             ) : (
-              <div className="empty-state">No completed focus sessions yet.</div>
+              <div className="empty-state">No focus sessions yet.</div>
             )}
           </div>
         </section>

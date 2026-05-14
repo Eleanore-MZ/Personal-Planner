@@ -206,13 +206,11 @@ function MainPanel({
         <>
           {categories.length === 0 ? (
             <div className="empty-state calendar-surface-empty">
-              No visible categories yet. Create a category before adding calendar
-              blocks.
+              No categories yet.
             </div>
           ) : timeBlocks.length === 0 ? (
             <div className="empty-state calendar-surface-empty">
-              No visible time blocks in this view. Add a block or show hidden
-              calendar categories from the inspector.
+              No time blocks in this view.
             </div>
           ) : null}
           {activeView === "week" ? (

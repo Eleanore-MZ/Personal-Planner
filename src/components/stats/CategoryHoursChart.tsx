@@ -10,10 +10,10 @@ type CategoryHoursChartProps = {
 
 function CategoryHoursChart({
   data,
-  emptyMessage = "No time block hours match the selected period and filters.",
+  emptyMessage = "No tracked time for this period.",
   hideZeroHours = false,
   kicker = "Category hours",
-  title = "Normal time by category",
+  title = "Tracked time by category",
 }: CategoryHoursChartProps) {
   const chartData = hideZeroHours
     ? data.filter((category) => category.hours > 0)

@@ -735,7 +735,7 @@
 .heatmap-empty {
   width: 13px;
   height: 13px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .heatmap-day {
@@ -746,6 +746,23 @@
 .heatmap-day.selected {
   border-color: var(--color-accent-strong);
   box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.22);
+}
+
+.heatmap-day.current-day {
+  border-color: #facc15;
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.82);
+}
+
+.heatmap-day.selected.current-day {
+  border-color: #facc15;
+  box-shadow:
+    0 0 0 2px rgba(34, 211, 238, 0.22),
+    inset 0 0 0 1px rgba(250, 204, 21, 0.82);
+}
+
+.heatmap-day:hover {
+  outline: 1px solid var(--color-text-strong);
+  outline-offset: 1px;
 }
 
 .intensity-0 {
@@ -1837,11 +1854,11 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: 1px solid var(--color-border);
   border-radius: 2px;
   background: var(--color-bg);
-  padding: 14px 12px;
+  padding: 16px 12px;
   text-align: center;
 }
 
@@ -1859,15 +1876,15 @@
 }
 
 .task-sidebar-progress {
-  width: 96px;
-  height: 96px;
+  width: 116px;
+  height: 116px;
   transform: rotate(-90deg);
 }
 
 .task-sidebar-progress-track,
 .task-sidebar-progress-ring {
   fill: none;
-  stroke-width: 2.4;
+  stroke-width: 5.5;
 }
 
 .task-sidebar-progress-track {
@@ -1875,10 +1892,15 @@
 }
 
 .task-sidebar-progress-ring {
-  stroke-linecap: round;
+  stroke-linecap: butt;
   transition:
     stroke-dashoffset 160ms ease,
     stroke 160ms ease;
+}
+
+.task-sidebar-mode-switcher {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
 }
 
 .task-sidebar-controls {
@@ -1939,15 +1961,17 @@
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
-  border: 1px solid var(--color-border-muted);
+  border: 1px solid var(--task-accent, var(--color-border-muted));
+  border-left: 4px solid var(--task-accent, var(--color-border-muted));
   border-radius: 2px;
-  background: var(--color-bg);
+  background: rgb(from var(--task-background, var(--color-bg)) r g b / 0.07);
   padding: 7px;
 }
 
 .inspector-task-row.selected {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.22);
+  box-shadow:
+    0 0 0 1px rgba(34, 211, 238, 0.26),
+    inset 0 0 0 1px var(--task-accent, var(--color-border-muted));
 }
 
 .inspector-task-row.complete {
@@ -1982,6 +2006,19 @@
 .inspector-task-row-body small {
   color: var(--color-text-muted);
   font-size: 11px;
+}
+
+.inspector-task-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector-task-meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-sidebar-workflow.compact .task-sidebar-summary {
@@ -2469,8 +2506,7 @@
 }
 
 .pomodoro-timer-surface .focus-timer-display {
-  min-height: 130px;
-  font-size: 56px;
+  min-height: 286px;
 }
 
 .pomodoro-timer-surface .focus-form-grid {
@@ -2491,6 +2527,10 @@
   overflow: auto;
 }
 
+.focus-task-row {
+  width: 100%;
+}
+
 .focus-timer-display {
   display: flex;
   align-items: center;
@@ -2503,6 +2543,105 @@
   color: var(--color-text-strong);
   font-size: 30px;
   font-weight: 800;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-timer-ring-display {
+  position: relative;
+  overflow: hidden;
+  min-height: 266px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.focus-progress-ring {
+  position: relative;
+  width: min(268px, 72vw);
+  aspect-ratio: 1;
+}
+
+.focus-progress-ring-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.focus-progress-ring-track,
+.focus-progress-ring-value {
+  fill: none;
+}
+
+.focus-progress-ring-track {
+  stroke: rgba(139, 148, 158, 0.22);
+  stroke-width: 12;
+}
+
+.focus-progress-ring-value {
+  stroke: var(--color-accent);
+  stroke-linecap: round;
+  stroke-width: 12;
+  transition: stroke-dashoffset 220ms linear;
+}
+
+.focus-timer-ring-display.break-mode .focus-progress-ring-value {
+  stroke: #34d399;
+}
+
+.focus-timer-ring-display.paused .focus-progress-ring-value {
+  stroke: rgba(139, 148, 158, 0.72);
+  filter: none;
+}
+
+.focus-timer-ring-display.completed .focus-progress-ring-value {
+  stroke: var(--color-accent-strong);
+}
+
+.focus-progress-ring-center {
+  position: absolute;
+  inset: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(48, 54, 61, 0.86);
+  border-radius: 50%;
+  background: var(--color-bg);
+  text-align: center;
+}
+
+.focus-progress-ring-center span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.focus-timer-ring-display.running .focus-progress-ring-center span {
+  color: var(--color-accent-strong);
+}
+
+.focus-timer-ring-display.break-mode.running .focus-progress-ring-center span {
+  color: #34d399;
+}
+
+.focus-timer-ring-display.paused .focus-progress-ring-center span {
+  color: var(--color-text-muted);
+}
+
+.focus-timer-ring-display.completed .focus-progress-ring-center span {
+  color: var(--color-accent-strong);
+}
+
+.focus-progress-ring-center strong {
+  margin-top: 7px;
+  color: var(--color-text-strong);
+  font-size: clamp(34px, 4.4vw, 46px);
+  font-weight: 850;
+  line-height: 1;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -3060,15 +3199,15 @@
 .year-monthly-productive-chart .vertical-bar {
   width: min(28px, 72%);
   min-height: 3px;
-  border-radius: 3px 3px 1px 1px;
+  border-radius: 0;
 }
 
 .year-monthly-productive-chart .vertical-stack-segment:first-child {
-  border-radius: 3px 3px 0 0;
+  border-radius: 0;
 }
 
 .year-monthly-productive-chart .vertical-stack-segment:last-child {
-  border-radius: 0 0 1px 1px;
+  border-radius: 0;
 }
 
 .year-monthly-productive-chart .vertical-chart-column strong {
@@ -3143,12 +3282,12 @@
   width: 10px;
   height: 10px;
   flex: 0 0 auto;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .chart-track {
   height: 10px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--color-surface-raised);
   overflow: hidden;
 }
@@ -3351,7 +3490,7 @@
   display: flex;
   align-items: end;
   border: 1px solid var(--color-border-muted);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--color-bg);
   overflow: hidden;
 }
@@ -3359,7 +3498,7 @@
 .vertical-bar {
   width: 100%;
   min-height: 4px;
-  border-radius: 2px 2px 0 0;
+  border-radius: 0;
   background: var(--color-accent);
   box-shadow: 0 0 24px rgba(34, 211, 238, 0.18);
 }
@@ -3370,7 +3509,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column-reverse;
-  border-radius: 2px 2px 0 0;
+  border-radius: 0;
   box-shadow: 0 0 22px rgba(34, 211, 238, 0.12);
 }
 
@@ -3420,19 +3559,37 @@
   margin-top: 10px;
 }
 
-.stacked-chart-legend span {
+.stacked-chart-legend button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  border: 1px solid var(--color-border-muted);
+  background: var(--color-bg);
   color: var(--color-text-muted);
+  padding: 4px 6px;
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.stacked-chart-legend button[aria-pressed="true"] {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.stacked-chart-legend button.muted {
+  opacity: 0.48;
+}
+
+.stacked-chart-legend button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .stacked-chart-legend i {
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .weekday-insights {
@@ -3514,7 +3671,7 @@
   min-width: 0;
   aspect-ratio: 1;
   border: 1px solid var(--color-border-muted);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--color-bg);
   color: var(--color-text-muted);
   padding: 4px;
@@ -3639,8 +3796,8 @@
 .sleep-line {
   fill: none;
   stroke: #60a5fa;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
   stroke-width: 3;
   filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.2));
 }
@@ -3690,8 +3847,8 @@
 .hour-area-line {
   fill: none;
   stroke: var(--color-accent);
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
   stroke-width: 3;
   filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.2));
 }
@@ -3797,7 +3954,7 @@
   position: relative;
   overflow: hidden;
   border: 1px solid var(--color-border-muted);
-  border-radius: 2px;
+  border-radius: 0;
   background:
     linear-gradient(
       90deg,
@@ -4327,8 +4484,19 @@
   }
 
   .pomodoro-timer-surface .focus-timer-display {
-    min-height: 90px;
-    font-size: 42px;
+    min-height: 248px;
+  }
+
+  .focus-progress-ring {
+    width: min(232px, 72vw);
+  }
+
+  .focus-progress-ring-center {
+    inset: 40px;
+  }
+
+  .focus-progress-ring-center strong {
+    font-size: clamp(30px, 8vw, 40px);
   }
 
   .stats-grid {

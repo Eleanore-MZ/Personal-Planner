@@ -45,7 +45,7 @@ function buildLineSegments(points: Array<DailyHoursDatum & { x: number; y: numbe
 function SleepByDayChart({
   ariaLabel = "Sleep hours by day of month",
   data,
-  emptyMessage = "No sleep blocks logged for this month.",
+  emptyMessage = "No sleep logged for this month.",
   kicker = "Sleep rhythm",
   pointLabelPrefix = "Day",
   title = "Sleep by day",
@@ -193,7 +193,7 @@ function SleepByDayChart({
         </>
       ) : (
         <div className="empty-state">
-          No days available for this month.
+          No days in this month.
         </div>
       )}
     </section>

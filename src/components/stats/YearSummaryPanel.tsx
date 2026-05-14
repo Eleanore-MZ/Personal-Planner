@@ -64,7 +64,7 @@ function YearSummaryPanel({
     ],
     [
       "Avg sleep",
-      averageSleepHours > 0 ? `${averageSleepHours.toFixed(1)}h/day` : "No sleep data",
+      averageSleepHours > 0 ? `${averageSleepHours.toFixed(1)}h/day` : "No sleep logged",
     ],
     ["Sleep days logged", sleepDaysLogged.toString()],
   ];

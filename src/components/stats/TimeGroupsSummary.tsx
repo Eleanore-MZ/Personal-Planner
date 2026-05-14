@@ -10,7 +10,7 @@ const ringRadius = 44;
 const ringCircumference = 2 * Math.PI * ringRadius;
 
 function TimeGroupsSummary({
-  emptyMessage = "No tracked time groups for this week under the current filters.",
+  emptyMessage = "No tracked time for this period.",
   groups,
   metricLabel,
 }: TimeGroupsSummaryProps) {
