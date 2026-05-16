@@ -291,6 +291,7 @@ function PomodoroPanel({
     return [selectedTask, ...openTasks];
   }, [openTasks, selectedTask]);
   const [selectedTaskId, setSelectedTaskId] = useState(selectedTask?.id ?? "");
+  const [customFocusTitle, setCustomFocusTitle] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     selectedTask?.categoryId ?? categories[0]?.id ?? "",
   );
@@ -414,6 +415,7 @@ function PomodoroPanel({
     setTimerState(restoredSession.status);
     setSelectedTaskId(restoredSession.taskId ?? "");
     setSelectedCategoryId(restoredSession.categoryId);
+    setCustomFocusTitle(restoredSession.taskId ? "" : restoredSession.title ?? "");
     setDurationPreset(
       durationOptions.some(
         (option) => option.value === restoredSession.durationMinutes,
@@ -451,6 +453,9 @@ function PomodoroPanel({
 
     setSelectedTaskId(selectedTask?.id ?? "");
     setSelectedCategoryId(selectedTask?.categoryId ?? categories[0]?.id ?? "");
+    if (selectedTask) {
+      setCustomFocusTitle("");
+    }
   }, [categories, hasActiveSession, selectedTask]);
 
   useEffect(() => {
@@ -701,15 +706,22 @@ function PomodoroPanel({
     isResolvingCancelRef.current = false;
     isEndingSessionRef.current = false;
     hasSavedSessionRef.current = false;
+    const categoryId = activeTask?.categoryId || selectedCategoryId;
+    const categoryTitle =
+      categories.find((category) => category.id === categoryId)?.name ??
+      "Focus session";
+    const customTitle = customFocusTitle.trim();
+    const sessionTitle =
+      activeTask?.title ?? (customTitle || categoryTitle);
     const session: PersistedFocusSession = {
       version: 1,
       durationMinutes: nextDurationMinutes,
       startedAt: new Date().toISOString(),
       taskId: activeTask?.id,
-      categoryId: activeTask?.categoryId || selectedCategoryId,
+      categoryId,
       status: "running",
       totalPausedMs: 0,
-      title: activeTask?.title,
+      title: sessionTitle,
     };
     writePersistedFocusSession(session);
     if (cycleEnabled) {
@@ -1089,27 +1101,37 @@ function PomodoroPanel({
       {!isBreakSurface ? (
         <div className="focus-form-grid">
           <label>
-            <span>Task</span>
-            <select
-              disabled={hasLockedTimer}
-              onChange={(event) => {
-                const nextTask = tasks.find(
-                  (task) => task.id === event.target.value,
-                );
-                setSelectedTaskId(event.target.value);
-                if (nextTask) {
-                  setSelectedCategoryId(nextTask.categoryId);
-                }
-              }}
-              value={selectedTaskId}
-            >
-              <option value="">No task</option>
-              {selectableTasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.title}
-                </option>
-              ))}
-            </select>
+            <span>{activeTask ? "Task" : "Title"}</span>
+            {activeTask ? (
+              <select
+                disabled={hasLockedTimer}
+                onChange={(event) => {
+                  const nextTask = tasks.find(
+                    (task) => task.id === event.target.value,
+                  );
+                  setSelectedTaskId(event.target.value);
+                  if (nextTask) {
+                    setSelectedCategoryId(nextTask.categoryId);
+                    setCustomFocusTitle("");
+                  }
+                }}
+                value={selectedTaskId}
+              >
+                <option value="">Custom title</option>
+                {selectableTasks.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                disabled={hasLockedTimer}
+                onChange={(event) => setCustomFocusTitle(event.target.value)}
+                placeholder="Focus session"
+                value={customFocusTitle}
+              />
+            )}
           </label>
 
           <label>
