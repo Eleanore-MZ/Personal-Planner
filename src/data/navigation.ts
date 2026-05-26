@@ -4,6 +4,7 @@ export const navItems: Array<{ id: NavItemId; label: string }> = [
   { id: "calendar", label: "Calendar" },
   { id: "tasks", label: "Tasks" },
   { id: "pomodoro", label: "Focus" },
+  { id: "timer", label: "Timer" },
   { id: "stats", label: "Stats" },
   { id: "categories", label: "Categories" },
 ];

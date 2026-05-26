@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
-import PomodoroPanel from "./PomodoroPanel";
 import { getCategoryColorValues } from "../../utils/calendar";
 import {
   findTaskCategory,
@@ -9,8 +8,9 @@ import {
   isTaskComplete,
   orderTasksByDueDate,
 } from "../../utils/tasks";
+import TimerPanel from "./TimerPanel";
 
-type PomodoroViewProps = {
+type TimerViewProps = {
   categories: Category[];
   selectedTaskId?: string;
   tasks: Task[];
@@ -20,26 +20,25 @@ type PomodoroViewProps = {
   onToggleTask: (taskId: string) => void | Promise<void>;
 };
 
-function PomodoroView({
+function TimerView({
   categories,
   selectedTaskId,
   tasks,
   onCompleteSession,
   onSelectTask,
   onToggleTask,
-}: PomodoroViewProps) {
+}: TimerViewProps) {
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   const openTasks = orderTasksByDueDate(
     tasks.filter((task) => !isTaskComplete(task)),
   );
 
   return (
-    <div className="pomodoro-view">
+    <div className="pomodoro-view timer-view">
       <section className="pomodoro-timer-surface">
-        <PomodoroPanel
+        <TimerPanel
           categories={categories}
           onCompleteSession={onCompleteSession}
-          onMarkTaskDone={onToggleTask}
           selectedTask={selectedTask}
           tasks={tasks}
         />
@@ -105,4 +104,4 @@ function PomodoroView({
   );
 }
 
-export default PomodoroView;
+export default TimerView;

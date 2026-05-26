@@ -289,7 +289,7 @@ const serializeRecurrenceExceptions = (exceptions) => exceptions && exceptions.l
 const normalizeRecurrenceEndMode = (mode, endDate) => mode === "never" && endDate ? "on" : mode ?? (endDate ? "on" : "never");
 const timeBlockOutcomes = ["active", "abandoned"];
 const timeBlockKinds = ["event", "task-session", "habit", "routine"];
-const timeBlockSources = ["manual", "pomodoro", "generated", "imported"];
+const timeBlockSources = ["manual", "pomodoro", "timer", "generated", "imported"];
 const defaultStatsGroups = [
   {
     id: "stats-group-work-study",

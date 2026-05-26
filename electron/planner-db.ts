@@ -172,7 +172,7 @@ const normalizeRecurrenceEndMode = (mode: TimeBlock['recurrenceEndMode'] | null,
 
 const timeBlockOutcomes: TimeBlock['outcome'][] = ['active', 'abandoned']
 const timeBlockKinds: TimeBlock['kind'][] = ['event', 'task-session', 'habit', 'routine']
-const timeBlockSources: TimeBlock['source'][] = ['manual', 'pomodoro', 'generated', 'imported']
+const timeBlockSources: TimeBlock['source'][] = ['manual', 'pomodoro', 'timer', 'generated', 'imported']
 
 const defaultStatsGroups: StatsGroup[] = [
   {

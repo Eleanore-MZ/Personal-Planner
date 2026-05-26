@@ -42,6 +42,12 @@ export const sectionPlaceholders: Record<
     description:
       "Run timed focus sessions and save completed work as calendar records.",
   },
+  timer: {
+    title: "Timer",
+    kicker: "Open timer",
+    description:
+      "Track open-ended sessions and save them as calendar records.",
+  },
   stats: {
     title: "Stats",
     kicker: "Personal analytics",

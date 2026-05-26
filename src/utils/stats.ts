@@ -473,18 +473,35 @@ export function calculateCategoryHours(
     }
   });
 
-  return Array.from(hoursByCategory.entries())
-    .map<CategoryHoursDatum>(([categoryId, hours]) => {
-      const category = categoryId ? categoryById.get(categoryId) : undefined;
-      const colors = getCategoryColorValues(category?.color);
-      return {
-        categoryId,
-        categoryName: category?.name ?? "Uncategorized",
-        color: colors.accent,
-        hours,
-      };
-    })
-    .sort((first, second) => second.hours - first.hours);
+  const orderedCategoryHours = categories.map<CategoryHoursDatum>((category) => {
+    const colors = getCategoryColorValues(category.color);
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      color: colors.accent,
+      hours: hoursByCategory.get(category.id) ?? 0,
+    };
+  });
+
+  if (hoursByCategory.has(null)) {
+    const colors = getCategoryColorValues(undefined);
+    orderedCategoryHours.push({
+      categoryId: null,
+      categoryName: "Uncategorized",
+      color: colors.accent,
+      hours: hoursByCategory.get(null) ?? 0,
+    });
+  }
+
+  return orderedCategoryHours;
+}
+
+function getTopCategoryHoursDatum(categoryHours: CategoryHoursDatum[]) {
+  return categoryHours.reduce<CategoryHoursDatum | null>(
+    (topCategory, category) =>
+      category.hours > (topCategory?.hours ?? 0) ? category : topCategory,
+    null,
+  );
 }
 
 const kindLabels: Record<TimeBlock["kind"], string> = {
@@ -502,6 +519,7 @@ const outcomeLabels: Record<TimeBlock["outcome"], string> = {
 const sourceLabels: Record<TimeBlock["source"], string> = {
   manual: "Manual",
   pomodoro: "Pomodoro",
+  timer: "Timer",
   generated: "Generated",
   imported: "Imported",
 };
@@ -1335,7 +1353,7 @@ export function calculateStatsSummary(
     averagePlannedHoursPerDay: totalPlannedHours / dayCount,
     averagePlannedHoursPerWeek: totalPlannedHours / weekCount,
     mostActiveCategoryName:
-      categoryHours.find((category) => category.hours > 0)?.categoryName ?? null,
+      getTopCategoryHoursDatum(categoryHours)?.categoryName ?? null,
   };
 }
 
@@ -1389,8 +1407,7 @@ export function buildYearHeatmapData(
       topStatsGroupName:
         timeGroupHours.find((group) => group.hours > 0)?.name ?? null,
       topCategoryName:
-        categoryHours.find((category) => category.hours > 0)?.categoryName ??
-        null,
+        getTopCategoryHoursDatum(categoryHours)?.categoryName ?? null,
     });
 
     date.setDate(date.getDate() + 1);

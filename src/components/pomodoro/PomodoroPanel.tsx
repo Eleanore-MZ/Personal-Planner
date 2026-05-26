@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Category, Task } from "../../types/domain";
+import type { Category, Task, TimeBlockKind } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
-import { isTaskComplete } from "../../utils/tasks";
+import { isTaskComplete, orderTasksByDueDate } from "../../utils/tasks";
 import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
 
 type PomodoroPanelProps = {
@@ -99,6 +99,17 @@ const writeStoredNumber = (key: string, value: number) => {
 
 const clampWholeNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
+
+const getPomodoroBlockKind = (
+  task: Task | undefined,
+  category: Category | undefined,
+): TimeBlockKind => {
+  if (task) {
+    return "task-session";
+  }
+
+  return category?.defaultBlockKind ?? "event";
+};
 
 const formatRemainingTime = (seconds: number) => {
   const safeSeconds = Math.max(0, seconds);
@@ -280,7 +291,7 @@ function PomodoroPanel({
   onMarkTaskDone,
 }: PomodoroPanelProps) {
   const openTasks = useMemo(
-    () => tasks.filter((task) => !isTaskComplete(task)),
+    () => orderTasksByDueDate(tasks.filter((task) => !isTaskComplete(task))),
     [tasks],
   );
   const selectableTasks = useMemo(() => {
@@ -518,10 +529,11 @@ function PomodoroPanel({
 
     const completedAt = new Date();
     const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const category = categories.find((currentCategory) => currentCategory.id === categoryId);
     const completedTitle =
       activeTask?.title ??
       activeSession.title ??
-      categories.find((category) => category.id === categoryId)?.name ??
+      category?.name ??
       "Focus session";
     const notificationBody = `${completedTitle} finished after ${formatDurationLabel(
       activeSession.durationMinutes,
@@ -552,7 +564,7 @@ function PomodoroPanel({
       startsAt: activeSession.startedAt,
       endsAt: completedAt.toISOString(),
       isAllDay: false,
-      kind: "task-session",
+      kind: getPomodoroBlockKind(activeTask, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
@@ -907,10 +919,11 @@ function PomodoroPanel({
     const focusedStart = new Date(activeSession.startedAt);
     const focusedEnd = new Date(focusedStart.getTime() + elapsedMs);
     const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const category = categories.find((currentCategory) => currentCategory.id === categoryId);
     const title =
       activeTask?.title ??
       activeSession.title ??
-      categories.find((category) => category.id === categoryId)?.name ??
+      category?.name ??
       "Focus session";
 
     isEndingSessionRef.current = true;
@@ -924,7 +937,7 @@ function PomodoroPanel({
       startsAt: focusedStart.toISOString(),
       endsAt: focusedEnd.toISOString(),
       isAllDay: false,
-      kind: "task-session",
+      kind: getPomodoroBlockKind(activeTask, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
@@ -985,10 +998,11 @@ function PomodoroPanel({
     const elapsedStart = new Date(Date.now() - elapsedMs);
     const elapsedEnd = new Date();
     const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const category = categories.find((currentCategory) => currentCategory.id === categoryId);
     const title =
       activeTask?.title ??
       activeSession.title ??
-      categories.find((category) => category.id === categoryId)?.name ??
+      category?.name ??
       "Focus session";
 
     isResolvingCancelRef.current = true;
@@ -1009,7 +1023,7 @@ function PomodoroPanel({
         startsAt: elapsedStart.toISOString(),
         endsAt: elapsedEnd.toISOString(),
         isAllDay: false,
-        kind: "task-session",
+        kind: getPomodoroBlockKind(activeTask, category),
         outcome: action === "partial" ? "active" : "abandoned",
         source: "pomodoro",
         recurrenceFrequency: "none",

@@ -244,6 +244,7 @@ const statsBlockSourceOptions: Array<{
   { value: "all", label: "All sources" },
   { value: "manual", label: "Manual" },
   { value: "pomodoro", label: "Pomodoro" },
+  { value: "timer", label: "Timer" },
   { value: "generated", label: "Generated" },
   { value: "imported", label: "Imported" },
 ];
@@ -251,6 +252,7 @@ const statsBlockSourceOptions: Array<{
 const sourceLabels: Record<TimeBlock["source"], string> = {
   manual: "Manual",
   pomodoro: "Pomodoro",
+  timer: "Timer",
   generated: "Generated",
   imported: "Imported",
 };

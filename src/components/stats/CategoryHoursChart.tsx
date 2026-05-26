@@ -29,7 +29,7 @@ function CategoryHoursChart({
         </div>
       </div>
 
-      {chartData.some((category) => category.hours > 0) ? (
+      {chartData.length > 0 ? (
         <div className="horizontal-chart">
           {chartData.map((category) => (
             <div className="chart-row" key={category.categoryId ?? "uncategorized"}>
@@ -48,6 +48,7 @@ function CategoryHoursChart({
                   className="chart-bar"
                   style={{
                     background: category.color,
+                    minWidth: category.hours > 0 ? 4 : 0,
                     width: `${(category.hours / maxHours) * 100}%`,
                   }}
                 />

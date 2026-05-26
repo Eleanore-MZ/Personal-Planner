@@ -18,6 +18,7 @@ import PomodoroView from "./pomodoro/PomodoroView";
 import SettingsView from "./settings/SettingsView";
 import StatsView from "./stats/StatsView";
 import TasksView from "./tasks/TasksView";
+import TimerView from "./timer/TimerView";
 import WeekView from "./calendar/WeekView";
 import { useState } from "react";
 
@@ -47,6 +48,11 @@ type MainPanelProps = {
   onCreateCategory: (input: CreateCategoryInput) => void | Promise<void>;
   onUpdateCategory: (input: Category) => void | Promise<void>;
   onDeleteCategory: (categoryId: string) => void | Promise<void>;
+  onReorderCategory: (
+    categoryId: string,
+    targetCategoryId: string,
+    placement: "before" | "after",
+  ) => void;
   onCreateTimeBlock: (input: CreateTimeBlockInput) => void | Promise<void>;
   onUpdateTimeBlock: (input: TimeBlock) => void | Promise<void>;
   onShiftCalendarDays: (days: number) => void;
@@ -82,6 +88,7 @@ function MainPanel({
   onCreateCategory,
   onUpdateCategory,
   onDeleteCategory,
+  onReorderCategory,
   onCreateTimeBlock,
   onUpdateTimeBlock,
   onShiftCalendarDays,
@@ -195,12 +202,23 @@ function MainPanel({
           tasks={tasks}
           timeBlocks={timeBlocks}
         />
+      ) : activeItem === "timer" ? (
+        <TimerView
+          categories={categories}
+          onCompleteSession={onPlanSession}
+          onSelectTask={onSelectTask}
+          onToggleTask={onToggleTask}
+          selectedTaskId={selectedTaskId}
+          tasks={tasks}
+          timeBlocks={timeBlocks}
+        />
       ) : activeItem === "categories" ? (
         <CategoriesView
           categories={categories}
           onCreateCategory={onCreateCategory}
           onUpdateCategory={onUpdateCategory}
           onDeleteCategory={onDeleteCategory}
+          onReorderCategory={onReorderCategory}
         />
       ) : isImplementedCalendarView ? (
         <>

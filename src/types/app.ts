@@ -2,6 +2,7 @@ export type NavItemId =
   | "calendar"
   | "tasks"
   | "pomodoro"
+  | "timer"
   | "stats"
   | "categories"
   | "settings";
@@ -30,6 +31,7 @@ export type StatsBlockSourceFilter =
   | "all"
   | "manual"
   | "pomodoro"
+  | "timer"
   | "generated"
   | "imported";
 

@@ -20,6 +20,7 @@ import {
   formatCalendarTitle,
   getTimeBlockSeriesId,
 } from "./utils/calendar";
+import { getNextPeriodDate, getPreviousPeriodDate } from "./utils/stats";
 import type {
   CreateCategoryInput,
   CreateTaskInput,
@@ -52,6 +53,7 @@ const isTypingTarget = (target: EventTarget | null) =>
   target instanceof HTMLSelectElement;
 
 const calendarShortcutViews: CalendarView[] = ["week", "month"];
+const categoryOrderKey = "planner:categoryOrder";
 
 type PendingRecurringUpdate = {
   occurrence: TimeBlock;
@@ -71,6 +73,50 @@ const getExpansionRange = (date: Date) => {
     start: addCalendarDays(start, -31),
     end: addCalendarDays(end, 31),
   };
+};
+
+const readCategoryOrderIds = () => {
+  try {
+    const storedOrder = localStorage.getItem(categoryOrderKey);
+    if (!storedOrder) {
+      return [];
+    }
+
+    const parsedOrder = JSON.parse(storedOrder);
+    return Array.isArray(parsedOrder)
+      ? parsedOrder.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCategoryOrderIds = (categoryIds: string[]) => {
+  try {
+    localStorage.setItem(categoryOrderKey, JSON.stringify(categoryIds));
+  } catch {
+    // Category ordering is a local UI preference.
+  }
+};
+
+const orderCategoriesByStoredOrder = (categories: Category[]) => {
+  const orderIds = readCategoryOrderIds();
+  if (orderIds.length === 0) {
+    return categories;
+  }
+
+  const categoryById = new Map(
+    categories.map((category) => [category.id, category]),
+  );
+  const orderedCategories = orderIds
+    .map((categoryId) => categoryById.get(categoryId))
+    .filter((category): category is Category => Boolean(category));
+  const orderedCategoryIds = new Set(orderedCategories.map((category) => category.id));
+  const newCategories = categories.filter(
+    (category) => !orderedCategoryIds.has(category.id),
+  );
+
+  return [...orderedCategories, ...newCategories];
 };
 
 function App() {
@@ -213,6 +259,37 @@ function App() {
     setCurrentDate((date) => addCalendarDays(date, days));
   };
 
+  const handleShiftStatsPeriod = (direction: -1 | 1) => {
+    setStatsFilters((currentFilters) => {
+      const currentStatsDate = new Date(currentFilters.selectedDateIso);
+      const nextStatsDate =
+        direction < 0
+          ? getPreviousPeriodDate(currentFilters.range, currentStatsDate)
+          : getNextPeriodDate(currentFilters.range, currentStatsDate);
+      setSelectedStatsDate(nextStatsDate);
+      return {
+        ...currentFilters,
+        selectedDateIso: nextStatsDate.toISOString(),
+      };
+    });
+  };
+
+  const handleCurrentStatsPeriod = () => {
+    const currentPeriodDate = new Date();
+    setSelectedStatsDate(currentPeriodDate);
+    setStatsFilters((currentFilters) => ({
+      ...currentFilters,
+      selectedDateIso: currentPeriodDate.toISOString(),
+    }));
+  };
+
+  const handleSelectStatsRange = (range: StatsFilters["range"]) => {
+    setStatsFilters((currentFilters) => ({
+      ...currentFilters,
+      range,
+    }));
+  };
+
   const handleSelectTask = (taskId: string) => {
     setSelectedTaskId(taskId);
     setSelectedBlockId(undefined);
@@ -262,7 +339,7 @@ function App() {
     window.plannerAPI
       .getSnapshot()
       .then((snapshot) => {
-        setCategories(snapshot.categories);
+        setCategories(orderCategoriesByStoredOrder(snapshot.categories));
         setStatsGroups(snapshot.statsGroups);
         setTasks(snapshot.tasks);
         setTimeBlocks(snapshot.timeBlocks);
@@ -330,7 +407,11 @@ function App() {
 
   const handleCreateCategory = async (input: CreateCategoryInput) => {
     const category = await window.plannerAPI.createCategory(input);
-    setCategories((currentCategories) => [...currentCategories, category]);
+    setCategories((currentCategories) => {
+      const nextCategories = [...currentCategories, category];
+      writeCategoryOrderIds(nextCategories.map((currentCategory) => currentCategory.id));
+      return nextCategories;
+    });
   };
 
   const handleUpdateCategory = async (input: Category) => {
@@ -347,10 +428,46 @@ function App() {
     const snapshot = await window.plannerAPI.getSnapshot();
     setTasks(snapshot.tasks);
     setTimeBlocks(snapshot.timeBlocks);
-    setCategories((currentCategories) =>
-      currentCategories.filter((category) => category.id !== categoryId),
-    );
+    setCategories((currentCategories) => {
+      const nextCategories = currentCategories.filter(
+        (category) => category.id !== categoryId,
+      );
+      writeCategoryOrderIds(nextCategories.map((category) => category.id));
+      return nextCategories;
+    });
     setStatsGroups(snapshot.statsGroups);
+  };
+
+  const handleReorderCategory = (
+    categoryId: string,
+    targetCategoryId: string,
+    placement: "before" | "after",
+  ) => {
+    if (categoryId === targetCategoryId) {
+      return;
+    }
+
+    setCategories((currentCategories) => {
+      const currentIndex = currentCategories.findIndex(
+        (category) => category.id === categoryId,
+      );
+      const targetIndex = currentCategories.findIndex(
+        (category) => category.id === targetCategoryId,
+      );
+      if (currentIndex < 0 || targetIndex < 0) {
+        return currentCategories;
+      }
+
+      const nextCategories = [...currentCategories];
+      const [movedCategory] = nextCategories.splice(currentIndex, 1);
+      const adjustedTargetIndex =
+        currentIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      const nextIndex =
+        placement === "after" ? adjustedTargetIndex + 1 : adjustedTargetIndex;
+      nextCategories.splice(nextIndex, 0, movedCategory);
+      writeCategoryOrderIds(nextCategories.map((category) => category.id));
+      return nextCategories;
+    });
   };
 
   const handleUpdateStatsGroups = async (groups: StatsGroup[]) => {
@@ -386,7 +503,7 @@ function App() {
           updatedBlock: timeBlock,
           scope: "this",
         });
-        setCategories(snapshot.categories);
+        setCategories(orderCategoriesByStoredOrder(snapshot.categories));
         setStatsGroups(snapshot.statsGroups);
         setTasks(snapshot.tasks);
         setTimeBlocks(snapshot.timeBlocks);
@@ -425,7 +542,7 @@ function App() {
       ...pendingRecurringUpdate,
       scope,
     });
-    setCategories(snapshot.categories);
+    setCategories(orderCategoriesByStoredOrder(snapshot.categories));
     setStatsGroups(snapshot.statsGroups);
     setTasks(snapshot.tasks);
     setTimeBlocks(snapshot.timeBlocks);
@@ -590,12 +707,24 @@ function App() {
       }
 
       if (event.key === "ArrowLeft") {
-        handlePrevious();
+        if (activeItem === "calendar") {
+          event.preventDefault();
+          handlePrevious();
+        } else if (activeItem === "stats") {
+          event.preventDefault();
+          handleShiftStatsPeriod(-1);
+        }
         return;
       }
 
       if (event.key === "ArrowRight") {
-        handleNext();
+        if (activeItem === "calendar") {
+          event.preventDefault();
+          handleNext();
+        } else if (activeItem === "stats") {
+          event.preventDefault();
+          handleShiftStatsPeriod(1);
+        }
         return;
       }
 
@@ -615,6 +744,7 @@ function App() {
         const navMap: Partial<Record<string, NavItemId>> = {
           c: "calendar",
           f: "pomodoro",
+          i: "timer",
           k: "tasks",
           s: "stats",
           p: "settings",
@@ -627,18 +757,45 @@ function App() {
         return;
       }
 
-      if (key === "t") {
+      if (activeItem === "stats" && key === "t") {
+        event.preventDefault();
+        handleCurrentStatsPeriod();
+        return;
+      }
+
+      if (activeItem === "calendar" && key === "t") {
+        event.preventDefault();
         handleToday();
         return;
       }
 
       if (activeItem === "calendar" && key === "w") {
+        event.preventDefault();
         setActiveView("week");
         return;
       }
 
       if (activeItem === "calendar" && key === "m") {
+        event.preventDefault();
         setActiveView("month");
+        return;
+      }
+
+      if (activeItem === "stats" && key === "w") {
+        event.preventDefault();
+        handleSelectStatsRange("week");
+        return;
+      }
+
+      if (activeItem === "stats" && key === "m") {
+        event.preventDefault();
+        handleSelectStatsRange("month");
+        return;
+      }
+
+      if (activeItem === "stats" && key === "y") {
+        event.preventDefault();
+        handleSelectStatsRange("year");
         return;
       }
 
@@ -685,16 +842,17 @@ function App() {
       />
 
       <main className="workspace">
-        <TopToolbar
-          activeView={activeView}
-          dateTitle={dateTitle}
-          onNext={handleNext}
-          onPrevious={handlePrevious}
-          onSelectView={setActiveView}
-          onToday={handleToday}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-          showViewSwitcher={activeItem === "calendar"}
-        />
+        {activeItem === "calendar" ? (
+          <TopToolbar
+            activeView={activeView}
+            dateTitle={dateTitle}
+            onNext={handleNext}
+            onPrevious={handlePrevious}
+            onSelectView={setActiveView}
+            onToday={handleToday}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          />
+        ) : null}
 
         <div className="content">
           <MainPanel
@@ -716,6 +874,7 @@ function App() {
             onCreateCategory={handleCreateCategory}
             onUpdateCategory={handleUpdateCategory}
             onDeleteCategory={handleDeleteCategory}
+            onReorderCategory={handleReorderCategory}
             onCreateTimeBlock={handleCreateTimeBlock}
             onUpdateTimeBlock={handleUpdateTimeBlock}
             onShiftCalendarDays={handleShiftCalendarDays}

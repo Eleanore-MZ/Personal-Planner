@@ -49,7 +49,12 @@ export type RecurrenceEndMode = "never" | "on" | "after";
 export type LegacyTimeBlockStatus = "planned" | "done" | "skipped" | "canceled";
 export type TimeBlockOutcome = "active" | "abandoned";
 export type TimeBlockKind = "event" | "task-session" | "habit" | "routine";
-export type TimeBlockSource = "manual" | "pomodoro" | "generated" | "imported";
+export type TimeBlockSource =
+  | "manual"
+  | "pomodoro"
+  | "timer"
+  | "generated"
+  | "imported";
 
 export type TimeBlock = {
   id: string;

@@ -241,9 +241,7 @@ function StatsView({
   );
   const weekCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active").filter(
-        (category) => category.hours > 0,
-      ),
+      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
     [categories, trackedActiveBlocks],
   );
   const weekTimeGroups = useMemo(
@@ -252,9 +250,7 @@ function StatsView({
   );
   const monthCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active").filter(
-        (category) => category.hours > 0,
-      ),
+      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
     [categories, trackedActiveBlocks],
   );
   const monthTimeGroups = useMemo(
@@ -263,9 +259,7 @@ function StatsView({
   );
   const yearCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active").filter(
-        (category) => category.hours > 0,
-      ),
+      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
     [categories, trackedActiveBlocks],
   );
   const yearTimeGroups = useMemo(
@@ -509,9 +503,6 @@ function StatsView({
   const yearCoverageDetail = yearCoverageWindow
     ? `since ${coverageDateFormatter.format(yearCoverageWindow.start)}`
     : "No recorded days yet";
-  const yearCoverageDaysDetail = yearCoverageWindow
-    ? `out of ${yearCoverageWindow.dayCount} recorded days`
-    : "No recorded days yet";
   const yearCoverageWeeksDetail = yearCoverageWindow
     ? `over ${yearCoverageWindow.weekCount.toFixed(1)} recorded weeks`
     : "No recorded weeks yet";
@@ -572,7 +563,14 @@ function StatsView({
     [yearProductiveGroups],
   );
   const topTrackedCategory = useMemo(
-    () => yearCategoryHours.find((category) => category.hours > 0) ?? null,
+    () =>
+      yearCategoryHours.reduce<(typeof yearCategoryHours)[number] | null>(
+        (currentCategory, category) =>
+          category.hours > (currentCategory?.hours ?? 0)
+            ? category
+            : currentCategory,
+        null,
+      ),
     [yearCategoryHours],
   );
   const highestProductiveDay = useMemo(
@@ -673,11 +671,6 @@ function StatsView({
         : "No recorded days yet",
     },
     {
-      label: "Abandoned time",
-      value: formatHours(summary.abandonedHours),
-      detail: "Abandoned non-all-day blocks",
-    },
-    {
       label: "Most productive month",
       value:
         mostProductiveMonth && mostProductiveMonth.hours > 0
@@ -687,11 +680,6 @@ function StatsView({
         mostProductiveMonth && mostProductiveMonth.hours > 0
           ? `${formatHours(mostProductiveMonth.hours)} productive`
           : "No productive month yet",
-    },
-    {
-      label: "Productive days",
-      value: yearProductiveDays.toString(),
-      detail: `Days with productive time ${yearCoverageDaysDetail}`,
     },
   ];
   const monthKpis = [
@@ -785,7 +773,6 @@ function StatsView({
           <CategoryHoursChart
             data={categoryChartData}
             emptyMessage="No tracked time for this week."
-            hideZeroHours
             kicker="Tracked categories"
             title={categoryChartTitle}
           />
@@ -849,7 +836,6 @@ function StatsView({
           <CategoryHoursChart
             data={monthCategoryHours}
             emptyMessage="No tracked time for this month."
-            hideZeroHours
             kicker="Tracked categories"
             title="Hours by category"
           />
@@ -908,7 +894,6 @@ function StatsView({
           <CategoryHoursChart
             data={categoryChartData}
             emptyMessage="No tracked time for this year."
-            hideZeroHours
             kicker="Tracked categories"
             title={categoryChartTitle}
           />

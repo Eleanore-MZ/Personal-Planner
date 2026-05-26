@@ -29,6 +29,19 @@ export function isTaskComplete(task: Task) {
   return task.status === "done";
 }
 
+export function orderTasksByDueDate(tasks: Task[]) {
+  const getDueTime = (task: Task) =>
+    task.dueDate
+      ? new Date(task.dueDate).getTime()
+      : Number.POSITIVE_INFINITY;
+
+  return [...tasks].sort(
+    (firstTask, secondTask) =>
+      getDueTime(firstTask) - getDueTime(secondTask) ||
+      firstTask.title.localeCompare(secondTask.title),
+  );
+}
+
 export function getTaskDueGroupId(task: Task, now = new Date()): DueGroupId {
   if (!task.dueDate) {
     return "none";

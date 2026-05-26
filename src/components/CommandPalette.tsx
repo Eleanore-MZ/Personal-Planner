@@ -28,6 +28,11 @@ const commands: Array<{
     action: ({ onSelectNav }) => onSelectNav("pomodoro"),
   },
   {
+    label: "Go to Timer",
+    hint: "G then I",
+    action: ({ onSelectNav }) => onSelectNav("timer"),
+  },
+  {
     label: "Go to Stats",
     hint: "G then S",
     action: ({ onSelectNav }) => onSelectNav("stats"),

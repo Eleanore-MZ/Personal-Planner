@@ -78,6 +78,7 @@ const blockOutcomeOptions: Array<{ value: TimeBlockOutcome; label: string }> = [
 const sourceLabels: Record<TimeBlock["source"], string> = {
   manual: "Manual",
   pomodoro: "Pomodoro",
+  timer: "Timer",
   generated: "Generated",
   imported: "Imported",
 };
