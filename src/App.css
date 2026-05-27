@@ -2743,6 +2743,54 @@
   box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.24);
 }
 
+.focus-category-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 118px;
+  overflow: auto;
+}
+
+.focus-category-choice {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.focus-category-choice > span {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 0;
+  background: var(--focus-category-accent);
+}
+
+.focus-category-choice.active {
+  border-color: var(--focus-category-border);
+  background: var(--focus-category-background);
+  color: var(--color-text-strong);
+}
+
+.focus-category-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.focus-category-choice:focus-visible {
+  border-color: var(--color-accent-border);
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.24);
+}
+
 .focus-actions {
   display: flex;
   flex-wrap: wrap;

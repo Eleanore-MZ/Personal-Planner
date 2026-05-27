@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Category, Task, TimeBlockKind } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
+import { getCategoryColorValues } from "../../utils/calendar";
 import { isTaskComplete, orderTasksByDueDate } from "../../utils/tasks";
 import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
 
@@ -28,6 +29,7 @@ type PersistedFocusSession = PersistedTimerSession & {
   version: 1;
   taskId?: string;
   categoryId: string;
+  kind?: TimeBlockKind;
   title?: string;
 };
 
@@ -39,6 +41,13 @@ const durationOptions = [
   { label: "25", value: 25 },
   { label: "50", value: 50 },
   { label: "Custom", value: 0 },
+];
+
+const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
+  { value: "event", label: "Event" },
+  { value: "task-session", label: "Task session" },
+  { value: "habit", label: "Habit" },
+  { value: "routine", label: "Routine" },
 ];
 
 const activeFocusSessionKey = "planner:activeFocusSession";
@@ -100,7 +109,10 @@ const writeStoredNumber = (key: string, value: number) => {
 const clampWholeNumber = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.round(value)));
 
-const getPomodoroBlockKind = (
+const isTimeBlockKind = (value: unknown): value is TimeBlockKind =>
+  blockKindOptions.some((option) => option.value === value);
+
+const getDefaultPomodoroBlockKind = (
   task: Task | undefined,
   category: Category | undefined,
 ): TimeBlockKind => {
@@ -138,6 +150,7 @@ const isPersistedFocusSession = (
     typeof session.totalPausedMs === "number" &&
     (!session.pausedAt || typeof session.pausedAt === "string") &&
     (!session.taskId || typeof session.taskId === "string") &&
+    (!session.kind || isTimeBlockKind(session.kind)) &&
     (!session.title || typeof session.title === "string")
   );
 };
@@ -306,6 +319,9 @@ function PomodoroPanel({
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     selectedTask?.categoryId ?? categories[0]?.id ?? "",
   );
+  const [selectedBlockKind, setSelectedBlockKind] = useState<TimeBlockKind>(
+    getDefaultPomodoroBlockKind(selectedTask, categories[0]),
+  );
   const [durationPreset, setDurationPreset] = useState(25);
   const [customDuration, setCustomDuration] = useState(25);
   const [timerState, setTimerState] = useState<TimerState>("idle");
@@ -355,6 +371,9 @@ function PomodoroPanel({
   const activeTask = tasks.find((task) => task.id === selectedTaskId);
   const endedSessionTask = tasks.find((task) => task.id === endedSessionTaskId);
   const durationMinutes = durationPreset === 0 ? customDuration : durationPreset;
+  const activeCategory = categories.find(
+    (category) => category.id === (activeTask?.categoryId || selectedCategoryId),
+  );
   const canStart = durationMinutes > 0 && Boolean(activeTask || selectedCategoryId);
   const taskProvidesCategory = Boolean(activeTask?.categoryId);
   const hasActiveSession = timerState === "running" || timerState === "paused";
@@ -426,6 +445,13 @@ function PomodoroPanel({
     setTimerState(restoredSession.status);
     setSelectedTaskId(restoredSession.taskId ?? "");
     setSelectedCategoryId(restoredSession.categoryId);
+    setSelectedBlockKind(
+      restoredSession.kind ??
+        getDefaultPomodoroBlockKind(
+          tasks.find((task) => task.id === restoredSession.taskId),
+          categories.find((category) => category.id === restoredSession.categoryId),
+        ),
+    );
     setCustomFocusTitle(restoredSession.taskId ? "" : restoredSession.title ?? "");
     setDurationPreset(
       durationOptions.some(
@@ -437,7 +463,7 @@ function PomodoroPanel({
     setCustomDuration(restoredSession.durationMinutes);
     setRemainingSeconds(getRemainingSeconds(restoredSession));
     setCompletedMessage("Restored active session.");
-  }, []);
+  }, [categories, tasks]);
 
   useEffect(() => {
     if (hasRestoredBreakRef.current) {
@@ -464,6 +490,14 @@ function PomodoroPanel({
 
     setSelectedTaskId(selectedTask?.id ?? "");
     setSelectedCategoryId(selectedTask?.categoryId ?? categories[0]?.id ?? "");
+    setSelectedBlockKind(
+      getDefaultPomodoroBlockKind(
+        selectedTask,
+        categories.find(
+          (category) => category.id === (selectedTask?.categoryId ?? categories[0]?.id),
+        ),
+      ),
+    );
     if (selectedTask) {
       setCustomFocusTitle("");
     }
@@ -564,7 +598,7 @@ function PomodoroPanel({
       startsAt: activeSession.startedAt,
       endsAt: completedAt.toISOString(),
       isAllDay: false,
-      kind: getPomodoroBlockKind(activeTask, category),
+      kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
@@ -731,6 +765,7 @@ function PomodoroPanel({
       startedAt: new Date().toISOString(),
       taskId: activeTask?.id,
       categoryId,
+      kind: selectedBlockKind,
       status: "running",
       totalPausedMs: 0,
       title: sessionTitle,
@@ -937,7 +972,7 @@ function PomodoroPanel({
       startsAt: focusedStart.toISOString(),
       endsAt: focusedEnd.toISOString(),
       isAllDay: false,
-      kind: getPomodoroBlockKind(activeTask, category),
+      kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
@@ -1023,7 +1058,7 @@ function PomodoroPanel({
         startsAt: elapsedStart.toISOString(),
         endsAt: elapsedEnd.toISOString(),
         isAllDay: false,
-        kind: getPomodoroBlockKind(activeTask, category),
+        kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
         outcome: action === "partial" ? "active" : "abandoned",
         source: "pomodoro",
         recurrenceFrequency: "none",
@@ -1126,7 +1161,12 @@ function PomodoroPanel({
                   setSelectedTaskId(event.target.value);
                   if (nextTask) {
                     setSelectedCategoryId(nextTask.categoryId);
+                    setSelectedBlockKind("task-session");
                     setCustomFocusTitle("");
+                  } else {
+                    setSelectedBlockKind(
+                      getDefaultPomodoroBlockKind(undefined, activeCategory),
+                    );
                   }
                 }}
                 value={selectedTaskId}
@@ -1148,20 +1188,57 @@ function PomodoroPanel({
             )}
           </label>
 
-          <label>
+          <div className="focus-choice-field">
             <span>Category</span>
-            <select
-              disabled={hasLockedTimer || taskProvidesCategory}
-              onChange={(event) => setSelectedCategoryId(event.target.value)}
-              value={activeTask?.categoryId || selectedCategoryId}
-            >
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="focus-category-choice-list" role="group" aria-label="Focus category">
+              {categories.map((category) => {
+                const colors = getCategoryColorValues(category.color);
+                const isSelected =
+                  (activeTask?.categoryId || selectedCategoryId) === category.id;
+                return (
+                  <button
+                    aria-pressed={isSelected}
+                    className={`focus-category-choice${isSelected ? " active" : ""}`}
+                    disabled={hasLockedTimer || taskProvidesCategory}
+                    key={category.id}
+                    onClick={() => {
+                      setSelectedCategoryId(category.id);
+                      if (!activeTask) {
+                        setSelectedBlockKind(
+                          getDefaultPomodoroBlockKind(undefined, category),
+                        );
+                      }
+                    }}
+                    style={
+                      {
+                        "--focus-category-accent": colors.accent,
+                        "--focus-category-background": colors.background,
+                        "--focus-category-border": colors.border,
+                      } as CSSProperties
+                    }
+                    type="button"
+                  >
+                    <span aria-hidden="true" />
+                    {category.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="focus-choice-field">
+            <span>Type</span>
+            <SegmentedControl
+              ariaLabel="Focus block type"
+              compact
+              onChange={setSelectedBlockKind}
+              options={blockKindOptions.map((option) => ({
+                ...option,
+                disabled: hasLockedTimer,
+              }))}
+              value={selectedBlockKind}
+            />
+          </div>
 
           {!cycleEnabled ? (
             <div className="focus-choice-field">

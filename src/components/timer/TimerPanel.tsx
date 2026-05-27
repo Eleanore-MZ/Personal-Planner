@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Category, Task, TimeBlockKind } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
+import { getCategoryColorValues } from "../../utils/calendar";
 import { isTaskComplete, orderTasksByDueDate } from "../../utils/tasks";
+import { SegmentedControl } from "../ui/ChoiceControls";
 
 type TimerPanelProps = {
   categories: Category[];
@@ -17,10 +19,21 @@ type PersistedTimerSession = {
   startedAt: string;
   taskId?: string;
   categoryId: string;
+  kind?: TimeBlockKind;
   title?: string;
 };
 
 const activeTimerSessionKey = "planner:activeTimerSession";
+
+const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
+  { value: "event", label: "Event" },
+  { value: "task-session", label: "Task session" },
+  { value: "habit", label: "Habit" },
+  { value: "routine", label: "Routine" },
+];
+
+const isTimeBlockKind = (value: unknown): value is TimeBlockKind =>
+  blockKindOptions.some((option) => option.value === value);
 
 const isPersistedTimerSession = (
   value: unknown,
@@ -35,6 +48,7 @@ const isPersistedTimerSession = (
     typeof session.startedAt === "string" &&
     typeof session.categoryId === "string" &&
     (!session.taskId || typeof session.taskId === "string") &&
+    (!session.kind || isTimeBlockKind(session.kind)) &&
     (!session.title || typeof session.title === "string")
   );
 };
@@ -109,7 +123,7 @@ const formatElapsedLabel = (elapsedMs: number) => {
   return "under 1m";
 };
 
-const getTimerBlockKind = (
+const getDefaultTimerBlockKind = (
   task: Task | undefined,
   category: Category | undefined,
 ): TimeBlockKind => {
@@ -140,6 +154,9 @@ function TimerPanel({
   const [selectedTaskId, setSelectedTaskId] = useState(selectedTask?.id ?? "");
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     selectedTask?.categoryId ?? categories[0]?.id ?? "",
+  );
+  const [selectedBlockKind, setSelectedBlockKind] = useState<TimeBlockKind>(
+    getDefaultTimerBlockKind(selectedTask, categories[0]),
   );
   const [customTimerTitle, setCustomTimerTitle] = useState("");
   const [timerState, setTimerState] = useState<TimerState>("idle");
@@ -177,10 +194,17 @@ function TimerPanel({
     setTimerState("running");
     setSelectedTaskId(restoredSession.taskId ?? "");
     setSelectedCategoryId(restoredSession.categoryId);
+    setSelectedBlockKind(
+      restoredSession.kind ??
+        getDefaultTimerBlockKind(
+          tasks.find((task) => task.id === restoredSession.taskId),
+          categories.find((category) => category.id === restoredSession.categoryId),
+        ),
+    );
     setCustomTimerTitle(restoredSession.taskId ? "" : restoredSession.title ?? "");
     setElapsedMs(getElapsedMs(restoredSession));
     setStatusMessage("Restored active timer.");
-  }, []);
+  }, [categories, tasks]);
 
   useEffect(() => {
     if (hasActiveSession) {
@@ -189,6 +213,14 @@ function TimerPanel({
 
     setSelectedTaskId(selectedTask?.id ?? "");
     setSelectedCategoryId(selectedTask?.categoryId ?? categories[0]?.id ?? "");
+    setSelectedBlockKind(
+      getDefaultTimerBlockKind(
+        selectedTask,
+        categories.find(
+          (category) => category.id === (selectedTask?.categoryId ?? categories[0]?.id),
+        ),
+      ),
+    );
     if (selectedTask) {
       setCustomTimerTitle("");
     }
@@ -215,6 +247,7 @@ function TimerPanel({
       startedAt: new Date().toISOString(),
       taskId: activeTask?.id,
       categoryId,
+      kind: selectedBlockKind,
       title: sessionTitle,
     };
     writePersistedTimerSession(session);
@@ -252,7 +285,7 @@ function TimerPanel({
         startsAt: activeSession.startedAt,
         endsAt: endDate.toISOString(),
         isAllDay: false,
-        kind: getTimerBlockKind(activeTask, savedCategory),
+        kind: activeSession.kind ?? getDefaultTimerBlockKind(activeTask, savedCategory),
         outcome: "active",
         source: "timer",
         recurrenceFrequency: "none",
@@ -322,7 +355,12 @@ function TimerPanel({
                 setSelectedTaskId(event.target.value);
                 if (nextTask) {
                   setSelectedCategoryId(nextTask.categoryId);
+                  setSelectedBlockKind("task-session");
                   setCustomTimerTitle("");
+                } else {
+                  setSelectedBlockKind(
+                    getDefaultTimerBlockKind(undefined, category),
+                  );
                 }
               }}
               value={selectedTaskId}
@@ -344,20 +382,57 @@ function TimerPanel({
           )}
         </label>
 
-        <label>
+        <div className="focus-choice-field">
           <span>Category</span>
-          <select
-            disabled={hasActiveSession || taskProvidesCategory}
-            onChange={(event) => setSelectedCategoryId(event.target.value)}
-            value={activeTask?.categoryId || selectedCategoryId}
-          >
-            {categories.map((currentCategory) => (
-              <option key={currentCategory.id} value={currentCategory.id}>
-                {currentCategory.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <div className="focus-category-choice-list" role="group" aria-label="Timer category">
+            {categories.map((currentCategory) => {
+              const colors = getCategoryColorValues(currentCategory.color);
+              const isSelected =
+                (activeTask?.categoryId || selectedCategoryId) === currentCategory.id;
+              return (
+                <button
+                  aria-pressed={isSelected}
+                  className={`focus-category-choice${isSelected ? " active" : ""}`}
+                  disabled={hasActiveSession || taskProvidesCategory}
+                  key={currentCategory.id}
+                  onClick={() => {
+                    setSelectedCategoryId(currentCategory.id);
+                    if (!activeTask) {
+                      setSelectedBlockKind(
+                        getDefaultTimerBlockKind(undefined, currentCategory),
+                      );
+                    }
+                  }}
+                  style={
+                    {
+                      "--focus-category-accent": colors.accent,
+                      "--focus-category-background": colors.background,
+                      "--focus-category-border": colors.border,
+                    } as CSSProperties
+                  }
+                  type="button"
+                >
+                  <span aria-hidden="true" />
+                  {currentCategory.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="focus-choice-field">
+          <span>Type</span>
+          <SegmentedControl
+            ariaLabel="Timer block type"
+            compact
+            onChange={setSelectedBlockKind}
+            options={blockKindOptions.map((option) => ({
+              ...option,
+              disabled: hasActiveSession,
+            }))}
+            value={selectedBlockKind}
+          />
+        </div>
       </div>
 
       <div className="focus-actions">
