@@ -14,9 +14,9 @@ function TimeGroupsSummary({
   groups,
   metricLabel,
 }: TimeGroupsSummaryProps) {
-  const visibleGroups = groups.filter((group) => group.hours > 0);
-  const totalHours = visibleGroups.reduce((total, group) => total + group.hours, 0);
-  const hasTrackedTime = totalHours > 0;
+  const totalHours = groups.reduce((total, group) => total + group.hours, 0);
+  const activeGroups = groups.filter((group) => group.hours > 0);
+  const hasGroups = groups.length > 0;
   let runningPercent = 0;
 
   return (
@@ -28,12 +28,12 @@ function TimeGroupsSummary({
         </div>
       </div>
 
-      {hasTrackedTime ? (
+      {hasGroups ? (
         <div className="time-groups-ring-layout">
           <div className="time-groups-ring-wrap" aria-hidden="true">
             <svg className="time-groups-ring" viewBox="0 0 120 120">
               <circle className="time-groups-ring-track" cx="60" cy="60" r={ringRadius} />
-              {visibleGroups.map((group) => {
+              {activeGroups.map((group) => {
                 const percent = (group.hours / totalHours) * 100;
                 const dash = (percent / 100) * ringCircumference;
                 const gap = ringCircumference - dash;
@@ -63,7 +63,7 @@ function TimeGroupsSummary({
           </div>
 
           <div className="time-groups-legend">
-            {visibleGroups.map((group) => {
+            {groups.map((group) => {
               const percent = totalHours > 0 ? (group.hours / totalHours) * 100 : 0;
 
               return (

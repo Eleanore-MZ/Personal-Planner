@@ -240,11 +240,17 @@ type LaidOutBlock = {
   originalBlock: TimeBlock;
 };
 
+const getVisualBlockEndMs = (block: TimeBlock) => {
+  const blockStart = new Date(block.startsAt).getTime();
+  const blockEnd = new Date(block.endsAt).getTime();
+  return Math.max(blockEnd, blockStart + dragSnapMinutes * 60000);
+};
+
 const doBlocksOverlap = (firstBlock: TimeBlock, secondBlock: TimeBlock) =>
   new Date(firstBlock.startsAt).getTime() <
-    new Date(secondBlock.endsAt).getTime() &&
+    getVisualBlockEndMs(secondBlock) &&
   new Date(secondBlock.startsAt).getTime() <
-    new Date(firstBlock.endsAt).getTime();
+    getVisualBlockEndMs(firstBlock);
 
 const getLaidOutBlocks = (
   dayBlocks: TimeBlock[],
@@ -262,7 +268,7 @@ const getLaidOutBlocks = (
 
   sortedBlocks.forEach((block) => {
     const blockStart = new Date(block.startsAt).getTime();
-    const blockEnd = new Date(block.endsAt).getTime();
+    const blockEnd = getVisualBlockEndMs(block);
     if (currentCluster.length === 0 || blockStart < currentClusterEnd) {
       currentCluster.push(block);
       currentClusterEnd = Math.max(currentClusterEnd, blockEnd);
@@ -282,7 +288,7 @@ const getLaidOutBlocks = (
     const laneEnds: number[] = [];
     const assignedBlocks = cluster.map((block) => {
       const blockStart = new Date(block.startsAt).getTime();
-      const blockEnd = new Date(block.endsAt).getTime();
+      const blockEnd = getVisualBlockEndMs(block);
       const reusableLane = laneEnds.findIndex((laneEnd) => laneEnd <= blockStart);
       const laneIndex = reusableLane === -1 ? laneEnds.length : reusableLane;
       laneEnds[laneIndex] = blockEnd;
