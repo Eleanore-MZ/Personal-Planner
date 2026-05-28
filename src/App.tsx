@@ -388,7 +388,9 @@ function App() {
         currentTask.id === task.id ? task : currentTask,
       ),
     );
-    setSelectedTaskId(task.id);
+    setSelectedTaskId((currentTaskId) =>
+      currentTaskId === task.id ? task.id : currentTaskId,
+    );
   };
 
   const handleDeleteTask = async (taskId: string) => {

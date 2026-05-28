@@ -123,6 +123,22 @@ const getDefaultPomodoroBlockKind = (
   return category?.defaultBlockKind ?? "event";
 };
 
+const getSessionTaskId = (session: PersistedFocusSession) => session.taskId;
+
+const getSessionCategoryId = (session: PersistedFocusSession) =>
+  session.categoryId;
+
+const getSessionTitle = (
+  session: PersistedFocusSession,
+  category: Category | undefined,
+) => session.title ?? category?.name ?? "Focus session";
+
+const getSessionKind = (
+  session: PersistedFocusSession,
+  category: Category | undefined,
+): TimeBlockKind =>
+  session.kind ?? (session.taskId ? "task-session" : category?.defaultBlockKind ?? "event");
+
 const formatRemainingTime = (seconds: number) => {
   const safeSeconds = Math.max(0, seconds);
   const minutes = Math.floor(safeSeconds / 60);
@@ -562,13 +578,9 @@ function PomodoroPanel({
     }
 
     const completedAt = new Date();
-    const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const categoryId = getSessionCategoryId(activeSession);
     const category = categories.find((currentCategory) => currentCategory.id === categoryId);
-    const completedTitle =
-      activeTask?.title ??
-      activeSession.title ??
-      category?.name ??
-      "Focus session";
+    const completedTitle = getSessionTitle(activeSession, category);
     const notificationBody = `${completedTitle} finished after ${formatDurationLabel(
       activeSession.durationMinutes,
     )}.`;
@@ -593,19 +605,18 @@ function PomodoroPanel({
     void onCompleteSession({
       title: completedTitle,
       notes: "Pomodoro focus session",
-      taskId: activeTask?.id,
+      taskId: getSessionTaskId(activeSession),
       categoryId,
       startsAt: activeSession.startedAt,
       endsAt: completedAt.toISOString(),
       isAllDay: false,
-      kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
+      kind: getSessionKind(activeSession, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
     });
   }, [
     activeSession,
-    activeTask,
     categories,
     notificationEnabled,
     onCompleteSession,
@@ -953,13 +964,9 @@ function PomodoroPanel({
 
     const focusedStart = new Date(activeSession.startedAt);
     const focusedEnd = new Date(focusedStart.getTime() + elapsedMs);
-    const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const categoryId = getSessionCategoryId(activeSession);
     const category = categories.find((currentCategory) => currentCategory.id === categoryId);
-    const title =
-      activeTask?.title ??
-      activeSession.title ??
-      category?.name ??
-      "Focus session";
+    const title = getSessionTitle(activeSession, category);
 
     isEndingSessionRef.current = true;
     hasSavedSessionRef.current = true;
@@ -967,12 +974,12 @@ function PomodoroPanel({
     await onCompleteSession({
       title,
       notes: "Pomodoro focus session ended early",
-      taskId: activeTask?.id,
+      taskId: getSessionTaskId(activeSession),
       categoryId,
       startsAt: focusedStart.toISOString(),
       endsAt: focusedEnd.toISOString(),
       isAllDay: false,
-      kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
+      kind: getSessionKind(activeSession, category),
       outcome: "active",
       source: "pomodoro",
       recurrenceFrequency: "none",
@@ -985,7 +992,7 @@ function PomodoroPanel({
         return nextCount;
       });
     }
-    setEndedSessionTaskId(activeTask?.id);
+    setEndedSessionTaskId(getSessionTaskId(activeSession));
     setActiveSession(undefined);
     setIsEndPromptOpen(false);
     setIsCancelPromptOpen(false);
@@ -1032,13 +1039,9 @@ function PomodoroPanel({
     const elapsedMs = getElapsedMs(activeSession);
     const elapsedStart = new Date(Date.now() - elapsedMs);
     const elapsedEnd = new Date();
-    const categoryId = activeTask?.categoryId || activeSession.categoryId;
+    const categoryId = getSessionCategoryId(activeSession);
     const category = categories.find((currentCategory) => currentCategory.id === categoryId);
-    const title =
-      activeTask?.title ??
-      activeSession.title ??
-      category?.name ??
-      "Focus session";
+    const title = getSessionTitle(activeSession, category);
 
     isResolvingCancelRef.current = true;
     clearPersistedFocusSession();
@@ -1053,12 +1056,12 @@ function PomodoroPanel({
           action === "partial"
             ? "Partial Pomodoro focus session"
             : "Abandoned Pomodoro focus session",
-        taskId: activeTask?.id,
+        taskId: getSessionTaskId(activeSession),
         categoryId,
         startsAt: elapsedStart.toISOString(),
         endsAt: elapsedEnd.toISOString(),
         isAllDay: false,
-        kind: activeSession.kind ?? getDefaultPomodoroBlockKind(activeTask, category),
+        kind: getSessionKind(activeSession, category),
         outcome: action === "partial" ? "active" : "abandoned",
         source: "pomodoro",
         recurrenceFrequency: "none",

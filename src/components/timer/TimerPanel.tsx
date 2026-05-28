@@ -134,6 +134,22 @@ const getDefaultTimerBlockKind = (
   return category?.defaultBlockKind ?? "event";
 };
 
+const getSessionTaskId = (session: PersistedTimerSession) => session.taskId;
+
+const getSessionCategoryId = (session: PersistedTimerSession) =>
+  session.categoryId;
+
+const getSessionTitle = (
+  session: PersistedTimerSession,
+  category: Category | undefined,
+) => session.title ?? category?.name ?? "Timed session";
+
+const getSessionKind = (
+  session: PersistedTimerSession,
+  category: Category | undefined,
+): TimeBlockKind =>
+  session.kind ?? (session.taskId ? "task-session" : category?.defaultBlockKind ?? "event");
+
 function TimerPanel({
   categories,
   selectedTask,
@@ -176,6 +192,7 @@ function TimerPanel({
   const categoryTitle = category?.name ?? "Timed session";
   const customTitle = customTimerTitle.trim();
   const sessionTitle = activeTask?.title ?? (customTitle || categoryTitle);
+  const visibleSessionTitle = activeSession?.title ?? sessionTitle;
   const canStart = Boolean(activeTask || selectedCategoryId);
   const hasActiveSession = timerState === "running" || timerState === "confirm-short";
 
@@ -264,15 +281,11 @@ function TimerPanel({
       return;
     }
 
-    const savedCategoryId = activeTask?.categoryId || activeSession.categoryId;
+    const savedCategoryId = getSessionCategoryId(activeSession);
     const savedCategory = categories.find(
       (currentCategory) => currentCategory.id === savedCategoryId,
     );
-    const title =
-      activeTask?.title ??
-      activeSession.title ??
-      savedCategory?.name ??
-      "Timed session";
+    const title = getSessionTitle(activeSession, savedCategory);
 
     isSavingRef.current = true;
     clearPersistedTimerSession();
@@ -280,12 +293,12 @@ function TimerPanel({
       await onCompleteSession({
         title,
         notes: "Timer session",
-        taskId: activeTask?.id,
+        taskId: getSessionTaskId(activeSession),
         categoryId: savedCategoryId,
         startsAt: activeSession.startedAt,
         endsAt: endDate.toISOString(),
         isAllDay: false,
-        kind: activeSession.kind ?? getDefaultTimerBlockKind(activeTask, savedCategory),
+        kind: getSessionKind(activeSession, savedCategory),
         outcome: "active",
         source: "timer",
         recurrenceFrequency: "none",
@@ -335,7 +348,7 @@ function TimerPanel({
       <div className={`timer-display ${timerState}`}>
         <span>{timerState === "running" ? "Tracking" : "Ready"}</span>
         <strong>{formatElapsedTime(elapsedMs)}</strong>
-        <small>{hasActiveSession ? sessionTitle : "Start when work begins"}</small>
+        <small>{hasActiveSession ? visibleSessionTitle : "Start when work begins"}</small>
       </div>
 
       {statusMessage ? (
