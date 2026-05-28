@@ -890,6 +890,7 @@ function App() {
             onSelectDate={setSelectedDate}
             onSelectStatsDate={setSelectedStatsDate}
             onOpenFocusPage={() => setActiveItem("pomodoro")}
+            onOpenTimerPage={() => setActiveItem("timer")}
             onUpdateSettings={handleUpdateSettings}
           />
           <ResizeHandle

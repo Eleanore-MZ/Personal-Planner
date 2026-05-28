@@ -59,6 +59,7 @@ type MainPanelProps = {
   onSelectDate: (date: Date) => void;
   onSelectStatsDate: (date: Date) => void;
   onOpenFocusPage: () => void;
+  onOpenTimerPage: () => void;
   onUpdateSettings: (settings: AppSettings) => void;
 };
 
@@ -95,6 +96,7 @@ function MainPanel({
   onSelectDate,
   onSelectStatsDate,
   onOpenFocusPage,
+  onOpenTimerPage,
   onUpdateSettings,
 }: MainPanelProps) {
   const [isTimeBlockDialogOpen, setIsTimeBlockDialogOpen] = useState(false);
@@ -191,6 +193,7 @@ function MainPanel({
           timeBlocks={timeBlocks}
           onPlanSession={onPlanSession}
           onOpenFocusPage={onOpenFocusPage}
+          onOpenTimerPage={onOpenTimerPage}
         />
       ) : activeItem === "pomodoro" ? (
         <PomodoroView

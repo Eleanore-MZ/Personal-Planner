@@ -16,6 +16,7 @@ type TaskDetailProps = {
   onUpdateTask: (input: Task) => void | Promise<void>;
   onPlanSession: () => void;
   onOpenFocusPage: () => void;
+  onOpenTimerPage: () => void;
 };
 
 const toDateInputValue = (date?: string) => (date ? date.slice(0, 10) : "");
@@ -50,6 +51,7 @@ function TaskDetail({
   onUpdateTask,
   onPlanSession,
   onOpenFocusPage,
+  onOpenTimerPage,
 }: TaskDetailProps) {
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -168,6 +170,13 @@ function TaskDetail({
             type="button"
           >
             Start Focus
+          </button>
+          <button
+            className="toolbar-button primary-action"
+            onClick={onOpenTimerPage}
+            type="button"
+          >
+            Start Timer
           </button>
           <button
             className="toolbar-button"

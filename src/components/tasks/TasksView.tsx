@@ -19,6 +19,7 @@ type TasksViewProps = {
   onToggleTask: (taskId: string) => void;
   onPlanSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
   onOpenFocusPage: () => void;
+  onOpenTimerPage: () => void;
 };
 
 function TasksView({
@@ -33,6 +34,7 @@ function TasksView({
   onToggleTask,
   onPlanSession,
   onOpenFocusPage,
+  onOpenTimerPage,
 }: TasksViewProps) {
   const [dialogMode, setDialogMode] = useState<"new" | "edit" | undefined>();
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
@@ -146,6 +148,7 @@ function TasksView({
           categories={categories}
           onDeleteTask={onDeleteTask}
           onOpenFocusPage={onOpenFocusPage}
+          onOpenTimerPage={onOpenTimerPage}
           onPlanSession={() => setIsPlanDialogOpen(true)}
           onUpdateTask={onUpdateTask}
           task={selectedTask}
