@@ -6,6 +6,7 @@ import CategoryHoursChart from "./CategoryHoursChart";
 import DailyPlannedHoursChart from "./DailyPlannedHoursChart";
 import HourOfDayChart from "./HourOfDayChart";
 import MonthActivityMap, { type MonthActivityDay } from "./MonthActivityMap";
+import PressureLevelChart from "./PressureLevelChart";
 import SelectedDayStats from "./SelectedDayStats";
 import SleepByDayChart from "./SleepByDayChart";
 import StatsKpiGrid from "./StatsKpiGrid";
@@ -22,6 +23,8 @@ import {
   calculateHourOfDayActivity,
   calculateMonthlyPlannedHours,
   calculateMonthlyStatsGroupHours,
+  calculatePressureLevel,
+  calculateYearPressureLevel,
   calculateSleepStats,
   calculateStatsSummary,
   calculateTimeOfDaySummary,
@@ -375,6 +378,16 @@ function StatsView({
     ),
     [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
   );
+  const monthPressureData = useMemo(
+    () =>
+      calculatePressureLevel(
+        filteredTasks,
+        filteredBlocks,
+        range.start,
+        range.end,
+      ),
+    [filteredBlocks, filteredTasks, range.end, range.start],
+  );
   const yearSleepByMonthData = useMemo(
     () =>
       Array.from({ length: 12 }, (_, month) => {
@@ -465,6 +478,15 @@ function StatsView({
         range.start.getFullYear(),
       ),
     [categories, filteredBlocks, range.start, statsGroups],
+  );
+  const yearPressureData = useMemo(
+    () =>
+      calculateYearPressureLevel(
+        filteredTasks,
+        filteredBlocks,
+        range.start.getFullYear(),
+      ),
+    [filteredBlocks, filteredTasks, range.start],
   );
   const [previewStatsDate, setPreviewStatsDate] = useState<Date | undefined>();
   const selectedHeatmapDay = useMemo(
@@ -854,6 +876,11 @@ function StatsView({
             title="Tracked time by week"
           />
           <SleepByDayChart data={monthSleepByDayData} />
+          <PressureLevelChart
+            ariaLabel="Month pressure level by day"
+            data={monthPressureData}
+            emptyMessage="No task pressure data for this month."
+          />
         </div>
       </StatsSection>
 
@@ -928,6 +955,11 @@ function StatsView({
           kicker="Monthly trend"
           showInsights={false}
           title={dailyChartTitle}
+        />
+        <PressureLevelChart
+          ariaLabel="Year pressure level by day"
+          data={yearPressureData}
+          emptyMessage="No task pressure data for this year."
         />
         <YearHeatmap
           data={heatmapData}

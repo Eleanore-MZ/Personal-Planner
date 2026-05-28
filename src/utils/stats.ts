@@ -109,6 +109,18 @@ export type WeekRhythmDay = {
   segments: WeekRhythmSegment[];
 };
 
+export type PressureDatum = {
+  date: string;
+  label: string;
+  rawPressure: number | null;
+  smoothedPressure: number | null;
+  dueLoad: number;
+  dueWithin7DaysCount: number;
+  overdueTaskCount: number;
+  recentTaskWorkHours: number;
+  taskWorkHours: number;
+};
+
 export type StatsSummary = {
   activeHours: number;
   activeDaysCount: number;
@@ -1414,6 +1426,391 @@ export function buildYearHeatmapData(
   }
 
   return days;
+}
+
+const pressurePriorityWeights: Record<Task["priority"], number> = {
+  high: 1.5,
+  low: 0.75,
+  medium: 1,
+};
+
+const pressureStatusWeights: Record<Task["status"], number> = {
+  blocked: 1.35,
+  canceled: 0,
+  done: 0,
+  "in-progress": 0.85,
+  todo: 1,
+};
+
+function clampPressureValue(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function clampUnitValue(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function getPercentile(values: number[], percentile: number, fallback: number) {
+  const sortedValues = values
+    .filter((value) => value > 0)
+    .sort((first, second) => first - second);
+
+  if (sortedValues.length === 0) {
+    return fallback;
+  }
+
+  const index = Math.ceil((percentile / 100) * sortedValues.length) - 1;
+  return Math.max(sortedValues[Math.max(0, Math.min(sortedValues.length - 1, index))], fallback);
+}
+
+function getOptionalPercentile(values: number[], percentile: number) {
+  const sortedValues = values
+    .filter((value) => value > 0)
+    .sort((first, second) => first - second);
+
+  if (sortedValues.length === 0) {
+    return null;
+  }
+
+  const index = Math.ceil((percentile / 100) * sortedValues.length) - 1;
+  return sortedValues[Math.max(0, Math.min(sortedValues.length - 1, index))];
+}
+
+function getPressureDueWeight(dueDate: Date, dayStart: Date) {
+  const dueDay = startOfDay(dueDate);
+  const daysUntilDue = Math.floor(
+    (dueDay.getTime() - dayStart.getTime()) / oneDayMs,
+  );
+
+  if (daysUntilDue < 0) {
+    return 5;
+  }
+
+  if (daysUntilDue === 0) {
+    return 4;
+  }
+
+  if (daysUntilDue === 1) {
+    return 3;
+  }
+
+  if (daysUntilDue <= 3) {
+    return 2;
+  }
+
+  if (daysUntilDue <= 7) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getRecentTaskWorkHours(
+  days: Array<{ inCoverage?: boolean; taskWorkHours: number }>,
+  index: number,
+) {
+  const windowStart = Math.max(0, index - 2);
+  const windowDays = days
+    .slice(windowStart, index + 1)
+    .filter((day) => day.inCoverage ?? true);
+  return (
+    windowDays.reduce((total, day) => total + day.taskWorkHours, 0) /
+    Math.max(1, windowDays.length)
+  );
+}
+
+function getPressureDatumFields(
+  day: Omit<PressureDatum, "rawPressure" | "smoothedPressure"> & {
+    inCoverage?: boolean;
+  },
+) {
+  return {
+    date: day.date,
+    dueLoad: day.dueLoad,
+    dueWithin7DaysCount: day.dueWithin7DaysCount,
+    label: day.label,
+    overdueTaskCount: day.overdueTaskCount,
+    recentTaskWorkHours: day.recentTaskWorkHours,
+    taskWorkHours: day.taskWorkHours,
+  };
+}
+
+function getPressureTaskDate(task: Task, rangeStart: Date, rangeEnd: Date) {
+  if (!task.dueDate || task.status === "canceled") {
+    return null;
+  }
+
+  const dueDate = startOfDay(new Date(task.dueDate));
+  return dueDate.getTime() >= rangeStart.getTime() && dueDate.getTime() < rangeEnd.getTime()
+    ? dueDate
+    : null;
+}
+
+function getTaskCompletedAt(task: Task) {
+  const completedAt = (task as Task & { completedAt?: string }).completedAt;
+  return completedAt ? new Date(completedAt) : null;
+}
+
+function taskContributesToPressure(task: Task, dayStart: Date) {
+  if (!task.dueDate || task.status === "canceled") {
+    return false;
+  }
+
+  if (task.status !== "done") {
+    return true;
+  }
+
+  const completedAt = getTaskCompletedAt(task);
+  return completedAt
+    ? dayStart.getTime() < startOfDay(completedAt).getTime()
+    : false;
+}
+
+function getPressureStatusWeight(task: Task, dayStart: Date) {
+  if (task.status === "done" && taskContributesToPressure(task, dayStart)) {
+    return pressureStatusWeights.todo;
+  }
+
+  return pressureStatusWeights[task.status];
+}
+
+function getPressureCoverageWindow(
+  tasks: Task[],
+  timeBlocks: TimeBlock[],
+  rangeStart: Date,
+  rangeEnd: Date,
+  currentDate = new Date(),
+) {
+  const start = startOfDay(rangeStart);
+  const end = startOfDay(rangeEnd);
+  const relevantTimes: number[] = [];
+
+  timeBlocks.forEach((block) => {
+    if (isAllDayBlock(block)) {
+      return;
+    }
+
+    const startsAt = new Date(block.startsAt).getTime();
+    const endsAt = new Date(block.endsAt).getTime();
+
+    if (endsAt <= start.getTime() || startsAt >= end.getTime()) {
+      return;
+    }
+
+    relevantTimes.push(Math.max(startsAt, start.getTime()));
+    relevantTimes.push(Math.min(endsAt - 1, end.getTime() - 1));
+  });
+
+  tasks.forEach((task) => {
+    const taskDate = getPressureTaskDate(task, start, end);
+
+    if (taskDate) {
+      relevantTimes.push(taskDate.getTime());
+    }
+  });
+
+  if (relevantTimes.length === 0) {
+    return null;
+  }
+
+  const coverageStart = startOfDay(new Date(Math.min(...relevantTimes)));
+  const currentDay = startOfDay(currentDate);
+  const rangeContainsToday =
+    currentDay.getTime() >= start.getTime() && currentDay.getTime() < end.getTime();
+  const coverageEnd = rangeContainsToday
+    ? startOfDay(
+        new Date(
+          Math.min(
+            Math.max(currentDate.getTime(), start.getTime()),
+            end.getTime() - 1,
+          ),
+        ),
+      )
+    : startOfDay(new Date(Math.max(...relevantTimes)));
+
+  if (coverageStart.getTime() > coverageEnd.getTime()) {
+    return null;
+  }
+
+  return { end: coverageEnd, start: coverageStart };
+}
+
+export function calculatePressureLevel(
+  tasks: Task[],
+  timeBlocks: TimeBlock[],
+  start: Date,
+  end: Date,
+  smoothingDays = 3,
+): PressureDatum[] {
+  const rawDays: Array<
+    Omit<PressureDatum, "rawPressure" | "smoothedPressure" | "recentTaskWorkHours"> & {
+      inCoverage: boolean;
+    }
+  > = [];
+  const date = startOfDay(start);
+  const rangeEnd = startOfDay(end);
+  const coverageWindow = getPressureCoverageWindow(tasks, timeBlocks, date, rangeEnd);
+  const pressureTasks = tasks.filter(
+    (task) => task.dueDate && task.status !== "canceled",
+  );
+  const pressureBlocks = timeBlocks.filter(
+    (block) =>
+      isActiveBlock(block) &&
+      !isAllDayBlock(block) &&
+      (Boolean(block.taskId) || block.kind === "task-session"),
+  );
+
+  while (date.getTime() < rangeEnd.getTime()) {
+    const dayStart = startOfDay(date);
+    const dayEnd = addCalendarDays(dayStart, 1);
+    const inCoverage = Boolean(
+      coverageWindow &&
+        dayStart.getTime() >= coverageWindow.start.getTime() &&
+        dayStart.getTime() <= coverageWindow.end.getTime(),
+    );
+    const dueLoad = inCoverage ? pressureTasks.reduce((total, task) => {
+      if (!task.dueDate || !taskContributesToPressure(task, dayStart)) {
+        return total;
+      }
+
+      const dueWeight = getPressureDueWeight(new Date(task.dueDate), dayStart);
+      return (
+        total +
+        dueWeight *
+          pressurePriorityWeights[task.priority] *
+          getPressureStatusWeight(task, dayStart)
+      );
+    }, 0) : 0;
+    const overdueTaskCount = inCoverage ? pressureTasks.filter((task) => {
+      if (!task.dueDate || !taskContributesToPressure(task, dayStart)) {
+        return false;
+      }
+
+      return startOfDay(new Date(task.dueDate)).getTime() < dayStart.getTime();
+    }).length : 0;
+    const dueWithin7DaysCount = inCoverage ? pressureTasks.filter((task) => {
+      if (!task.dueDate || !taskContributesToPressure(task, dayStart)) {
+        return false;
+      }
+
+      const dueDay = startOfDay(new Date(task.dueDate));
+      const daysUntilDue = Math.floor(
+        (dueDay.getTime() - dayStart.getTime()) / oneDayMs,
+      );
+      return daysUntilDue >= 0 && daysUntilDue <= 7;
+    }).length : 0;
+    const taskWorkHours = inCoverage
+      ?
+      pressureBlocks.reduce(
+        (total, block) => total + getOverlappingMinutes(block, dayStart, dayEnd),
+        0,
+      ) / 60
+      : 0;
+
+    rawDays.push({
+      date: dayStart.toISOString(),
+      dueLoad,
+      dueWithin7DaysCount,
+      inCoverage,
+      label: dayLabelFormatter.format(dayStart),
+      overdueTaskCount,
+      taskWorkHours,
+    });
+
+    date.setDate(date.getDate() + 1);
+  }
+
+  const daysWithRecentWork = rawDays.map((day, index) => ({
+    ...day,
+    recentTaskWorkHours: day.inCoverage ? getRecentTaskWorkHours(rawDays, index) : 0,
+  }));
+  const dueRef = getPercentile(
+    daysWithRecentWork
+      .filter((day) => day.inCoverage)
+      .map((day) => day.dueLoad),
+    90,
+    8,
+  );
+  const workRef = getPercentile(
+    daysWithRecentWork
+      .filter((day) => day.inCoverage)
+      .map((day) => day.recentTaskWorkHours),
+    90,
+    4,
+  );
+  const baseScoredDays = daysWithRecentWork.map((day) => {
+    if (!day.inCoverage) {
+      return {
+        ...getPressureDatumFields(day),
+        rawPressure: null,
+      };
+    }
+
+    const dueNorm = clampUnitValue(day.dueLoad / dueRef);
+    const workNorm = clampUnitValue(day.recentTaskWorkHours / workRef);
+    const neglectNorm = dueNorm * (1 - workNorm);
+    const rawPressure = clampUnitValue(
+      0.6 * dueNorm + 0.25 * workNorm + 0.15 * neglectNorm,
+    );
+
+    return {
+      ...getPressureDatumFields(day),
+      rawPressure,
+    };
+  });
+  const pressureRef =
+    getOptionalPercentile(
+      baseScoredDays
+        .filter((day) => day.rawPressure !== null)
+        .map((day) => day.rawPressure ?? 0),
+      90,
+    ) ?? 0.45;
+  const calibratedPressureRef = pressureRef < 0.05 ? 0.45 : pressureRef;
+  const scoredDays = baseScoredDays.map((day) =>
+    day.rawPressure === null
+      ? day
+      : {
+          ...day,
+          rawPressure: clampPressureValue(
+            (day.rawPressure / calibratedPressureRef) * 85,
+          ),
+        },
+  );
+
+  return scoredDays.map((day, index) => {
+    const leadingDays = Math.floor(smoothingDays / 2);
+    const trailingDays = Math.max(0, smoothingDays - leadingDays - 1);
+    const windowStart = Math.max(0, index - leadingDays);
+    const windowEnd = Math.min(scoredDays.length, index + trailingDays + 1);
+    const windowDays = scoredDays
+      .slice(windowStart, windowEnd)
+      .filter((currentDay) => currentDay.rawPressure !== null);
+    const smoothedPressure = day.rawPressure === null || windowDays.length === 0
+      ? null
+      : windowDays.reduce(
+          (total, currentDay) => total + (currentDay.rawPressure ?? 0),
+          0,
+        ) / windowDays.length;
+
+    return {
+      ...day,
+      smoothedPressure,
+    };
+  });
+}
+
+export function calculateYearPressureLevel(
+  tasks: Task[],
+  timeBlocks: TimeBlock[],
+  year: number,
+): PressureDatum[] {
+  return calculatePressureLevel(
+    tasks,
+    timeBlocks,
+    new Date(year, 0, 1),
+    new Date(year + 1, 0, 1),
+    7,
+  );
 }
 
 export function getHeatmapValue(

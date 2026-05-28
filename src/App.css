@@ -3975,6 +3975,57 @@
   stroke: var(--color-accent-strong);
 }
 
+.pressure-level-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.pressure-line-chart {
+  height: 260px;
+  color: #22d3ee;
+}
+
+.pressure-line-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.pressure-axis-row line {
+  stroke: var(--color-border-muted);
+  stroke-width: 1;
+}
+
+.pressure-axis-row text,
+.pressure-axis-label {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.pressure-axis-row text {
+  text-anchor: end;
+}
+
+.pressure-area-fill {
+  fill: url("#pressure-area-fill");
+  color: #22d3ee;
+}
+
+.pressure-line {
+  fill: none;
+  stroke: url("#pressure-line-gradient");
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.12));
+}
+
+.pressure-hover-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
 .time-of-day-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
