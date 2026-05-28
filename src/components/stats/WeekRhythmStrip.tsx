@@ -5,7 +5,7 @@ type WeekRhythmStripProps = {
   title?: string;
 };
 
-const rhythmTicks = ["00", "06", "12", "18", "24"];
+const rhythmTicks = ["00", "03", "06", "09", "12", "15", "18", "21", "24"];
 const laneHeightPx = 7;
 const lanePaddingPx = 2;
 
