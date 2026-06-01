@@ -336,6 +336,16 @@ function TimerPanel({
     setTimerState("running");
   };
 
+  const discardShortSession = () => {
+    clearPersistedTimerSession();
+    setActiveSession(undefined);
+    setElapsedMs(0);
+    setPendingEndAt(undefined);
+    setTimerState("idle");
+    setStatusMessage("Timer session discarded.");
+    isSavingRef.current = false;
+  };
+
   return (
     <section className="focus-panel timer-panel">
       <div className="task-detail-section-header">
@@ -468,6 +478,13 @@ function TimerPanel({
             </button>
             <button className="toolbar-button" onClick={continueTiming} type="button">
               Continue timing
+            </button>
+            <button
+              className="toolbar-button danger-action"
+              onClick={discardShortSession}
+              type="button"
+            >
+              Discard
             </button>
           </>
         ) : (

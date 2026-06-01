@@ -4,6 +4,7 @@ type PressureLevelChartProps = {
   ariaLabel?: string;
   data: PressureDatum[];
   emptyMessage?: string;
+  xAxisMode?: "date" | "month";
 };
 
 const chartWidth = 960;
@@ -19,6 +20,7 @@ const dayFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "short",
 });
+const referencePressure = 100;
 
 type ChartPoint = PressureDatum & {
   rawPressure: number;
@@ -103,19 +105,33 @@ function hasPressureValue(point: PositionedPressureDatum): point is ChartPoint {
 }
 
 function PressureLevelChart({
-  ariaLabel = "Pressure level by day",
+  ariaLabel = "Pressure index by day",
   data,
   emptyMessage = "No task pressure data for this period.",
+  xAxisMode = "month",
 }: PressureLevelChartProps) {
-  const maxPressure = 100;
-  const hasData = data.some(
-    (day) =>
-      day.rawPressure !== null &&
-      (day.dueLoad > 0 || day.taskWorkHours > 0 || day.recentTaskWorkHours > 0),
-  );
+  const visiblePressureValues = data.reduce<number[]>((values, day) => {
+    if (day.rawPressure !== null) {
+      values.push(day.rawPressure);
+    }
+
+    if (day.smoothedPressure !== null) {
+      values.push(day.smoothedPressure);
+    }
+
+    return values;
+  }, []);
+  const hasData = visiblePressureValues.length > 0;
+  const visibleMax = Math.max(...visiblePressureValues, 0);
+  const axisMax =
+    visibleMax <= 200 ? 200 : Math.ceil((visibleMax * 1.1) / 50) * 50;
   const plotWidth = chartWidth - chartPadding.left - chartPadding.right;
   const plotHeight = chartHeight - chartPadding.top - chartPadding.bottom;
   const baselineY = chartHeight - chartPadding.bottom;
+  const getPressureY = (pressure: number) =>
+    baselineY - (pressure / axisMax) * plotHeight;
+  const yellowOffset = (referencePressure / axisMax) * 100;
+  const redOffset = (200 / axisMax) * 100;
   const points = data.map((day, index) => {
     const x =
       chartPadding.left +
@@ -123,12 +139,22 @@ function PressureLevelChart({
     const y =
       day.smoothedPressure === null
         ? null
-        : baselineY - (day.smoothedPressure / maxPressure) * plotHeight;
+        : getPressureY(day.smoothedPressure);
     return { ...day, x, y };
   });
   const lineSegments = getLineSegments(points);
-  const yAxisLabels = [100, 50, 0];
-  const monthLabels = points.filter((point) => new Date(point.date).getDate() === 1);
+  const yAxisLabels = Array.from(
+    { length: Math.floor(axisMax / 50) + 1 },
+    (_, index) => index * 50,
+  ).filter((pressure) => pressure !== referencePressure);
+  const referenceY = getPressureY(referencePressure);
+  const xAxisLabels =
+    xAxisMode === "date"
+      ? points.filter((point, index) => {
+          const dayOfMonth = new Date(point.date).getDate();
+          return index === 0 || index === points.length - 1 || dayOfMonth % 5 === 0;
+        })
+      : points.filter((point) => new Date(point.date).getDate() === 1);
   const hoverBandWidth = plotWidth / Math.max(points.length, 1);
 
   return (
@@ -136,7 +162,10 @@ function PressureLevelChart({
       <div className="stats-card-header">
         <div>
           <div className="panel-kicker">Workload pressure</div>
-          <h2>Pressure level</h2>
+          <h2>Pressure index</h2>
+          <p className="pressure-level-helper">
+            100 marks a high-pressure reference day; heavier days can exceed it.
+          </p>
         </div>
       </div>
 
@@ -161,13 +190,16 @@ function PressureLevelChart({
                 y2={chartPadding.top}
               >
                 <stop offset="0%" stopColor="#22d3ee" />
-                <stop offset="54%" stopColor="#facc15" />
-                <stop offset="100%" stopColor="#f87171" />
+                <stop offset={`${yellowOffset}%`} stopColor="#facc15" />
+                <stop offset={`${redOffset}%`} stopColor="#f87171" />
+                {axisMax > 200 ? (
+                  <stop offset="100%" stopColor="#f87171" />
+                ) : null}
               </linearGradient>
             </defs>
 
             {yAxisLabels.map((pressure) => {
-              const y = baselineY - (pressure / maxPressure) * plotHeight;
+              const y = getPressureY(pressure);
               return (
                 <g className="pressure-axis-row" key={pressure}>
                   <line
@@ -182,6 +214,21 @@ function PressureLevelChart({
                 </g>
               );
             })}
+
+            <line
+              className="pressure-reference-line"
+              x1={chartPadding.left}
+              x2={chartWidth - chartPadding.right}
+              y1={referenceY}
+              y2={referenceY}
+            />
+            <text
+              className="pressure-reference-label"
+              x={chartWidth - chartPadding.right}
+              y={referenceY - 6}
+            >
+              100 reference
+            </text>
 
             {lineSegments.map((segment) => {
               const linePath = buildSmoothPath(segment);
@@ -205,7 +252,7 @@ function PressureLevelChart({
               />
             ))}
 
-            {monthLabels.map((point) => (
+            {xAxisLabels.map((point) => (
               <text
                 className="pressure-axis-label"
                 key={point.date}
@@ -213,7 +260,9 @@ function PressureLevelChart({
                 x={point.x}
                 y={chartHeight - 9}
               >
-                {monthFormatter.format(new Date(point.date))}
+                {xAxisMode === "date"
+                  ? new Date(point.date).getDate()
+                  : monthFormatter.format(new Date(point.date))}
               </text>
             ))}
 
@@ -227,13 +276,14 @@ function PressureLevelChart({
                 y={chartPadding.top}
               >
                 <title>
-                  {dayFormatter.format(new Date(point.date))}: pressure{" "}
-                  {point.rawPressure.toFixed(0)}, smoothed{" "}
-                  {point.smoothedPressure.toFixed(0)}, due load{" "}
-                  {point.dueLoad.toFixed(1)}, task work{" "}
-                  {point.taskWorkHours.toFixed(1)}h, overdue{" "}
-                  {point.overdueTaskCount}, due within 7 days{" "}
-                  {point.dueWithin7DaysCount}
+                  {dayFormatter.format(new Date(point.date))}: smoothed pressure index{" "}
+                  {point.smoothedPressure.toFixed(0)}, raw pressure index{" "}
+                  {point.rawPressure.toFixed(0)}, due pressure{" "}
+                  {point.duePressure.toFixed(1)}, due points{" "}
+                  {point.duePoints.toFixed(1)}, task work{" "}
+                  {point.taskWorkHours.toFixed(1)}h, work points{" "}
+                  {point.workPoints.toFixed(1)}, tasks due within +/-3 days{" "}
+                  {point.tasksDueWithin3DaysCount}
                 </title>
               </rect>
             ))}

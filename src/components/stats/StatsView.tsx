@@ -35,6 +35,7 @@ import {
   filterStatsTasks,
   filterStatsTimeBlocks,
   getSelectedHeatmapDay,
+  getRecordedTimeBlockDayCount,
   getStatsRange,
   getTasksDueInRange,
   getTimeBlocksInRange,
@@ -82,34 +83,6 @@ const summaryDayFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   month: "short",
 });
-const coverageDateFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-});
-
-const oneDayMs = 24 * 60 * 60 * 1000;
-
-function startOfLocalDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function getPeriodDayCount(start: Date, end: Date) {
-  return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
-}
-
-function getElapsedPeriodDayCount(start: Date, end: Date, currentDate = new Date()) {
-  const dayCount = getPeriodDayCount(start, end);
-  const rangeStart = startOfLocalDay(start).getTime();
-  const rangeEnd = end.getTime();
-  const todayStart = startOfLocalDay(currentDate).getTime();
-
-  if (todayStart >= rangeStart && todayStart < rangeEnd) {
-    return Math.max(1, Math.min(dayCount, Math.floor((todayStart - rangeStart) / oneDayMs) + 1));
-  }
-
-  return dayCount;
-}
-
 function formatHours(hours: number) {
   return `${hours.toFixed(1)}h`;
 }
@@ -131,6 +104,10 @@ function StatsView({
   const range = useMemo(
     () => getStatsRange(filters.range, periodDate, weekStartDay),
     [filters.range, periodDate, weekStartDay],
+  );
+  const periodRecordedDayCount = useMemo(
+    () => getRecordedTimeBlockDayCount(timeBlocks, range.start, range.end),
+    [range.end, range.start, timeBlocks],
   );
   const filteredTasks = useMemo(
     () => {
@@ -185,6 +162,58 @@ function StatsView({
     filters.refreshKey,
     timeBlocks,
   ]);
+  const pressureTasks = useMemo(
+    () => {
+      if (filters.refreshKey < 0) {
+        return [];
+      }
+
+      return filterStatsTasks(
+        tasks,
+        filters.categoryId,
+        true,
+        filters.includeUncategorized,
+        categories,
+        filters.includeStatsExcludedCategories,
+      );
+    },
+    [
+      categories,
+      filters.categoryId,
+      filters.includeStatsExcludedCategories,
+      filters.includeUncategorized,
+      filters.refreshKey,
+      tasks,
+    ],
+  );
+  const pressureBlocks = useMemo(
+    () => {
+      if (filters.refreshKey < 0) {
+        return [];
+      }
+
+      return filterStatsTimeBlocks(
+        timeBlocks,
+        filters.categoryId,
+        false,
+        filters.includeUncategorized,
+        categories,
+        filters.includeStatsExcludedCategories,
+        "all",
+        filters.blockOutcome,
+        "all",
+      );
+    },
+    [
+      categories,
+      filters.blockOutcome,
+      filters.categoryId,
+      filters.includeStatsExcludedCategories,
+      filters.includeUncategorized,
+      filters.refreshKey,
+      timeBlocks,
+    ],
+  );
   const periodBlocks = useMemo(
     () => getTimeBlocksInRange(filteredBlocks, range.start, range.end),
     [filteredBlocks, range.end, range.start],
@@ -381,18 +410,23 @@ function StatsView({
   const monthPressureData = useMemo(
     () =>
       calculatePressureLevel(
-        filteredTasks,
-        filteredBlocks,
+        pressureTasks,
+        pressureBlocks,
         range.start,
         range.end,
       ),
-    [filteredBlocks, filteredTasks, range.end, range.start],
+    [pressureBlocks, pressureTasks, range.end, range.start],
   );
   const yearSleepByMonthData = useMemo(
     () =>
       Array.from({ length: 12 }, (_, month) => {
         const monthStart = new Date(range.start.getFullYear(), month, 1);
         const monthEnd = new Date(range.start.getFullYear(), month + 1, 1);
+        const monthRecordedDayCount = getRecordedTimeBlockDayCount(
+          timeBlocks,
+          monthStart,
+          monthEnd,
+        );
         const monthlySleep = calculateSleepStats(
           trackedActiveBlocks,
           categories,
@@ -400,6 +434,7 @@ function StatsView({
           monthStart,
           monthEnd,
           "period-days",
+          monthRecordedDayCount,
         );
 
         return {
@@ -409,7 +444,7 @@ function StatsView({
             monthlySleep.totalHours > 0 ? monthlySleep.averageHoursPerDay : 0,
         };
       }),
-    [categories, range.start, statsGroups, trackedActiveBlocks],
+    [categories, range.start, statsGroups, timeBlocks, trackedActiveBlocks],
   );
   const yearHourOfDayData = useMemo(
     () => calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end),
@@ -428,11 +463,14 @@ function StatsView({
         range.start,
         range.end,
         filters.timeMode,
+        undefined,
+        periodRecordedDayCount,
       ),
     [
       categories,
       productiveSummaryBlocks,
       filters.timeMode,
+      periodRecordedDayCount,
       range.end,
       range.start,
       summaryTasks,
@@ -447,10 +485,13 @@ function StatsView({
         range.start,
         range.end,
         filters.timeMode,
+        undefined,
+        periodRecordedDayCount,
       ),
     [
       categories,
       filters.timeMode,
+      periodRecordedDayCount,
       range.end,
       range.start,
       summaryTasks,
@@ -466,8 +507,17 @@ function StatsView({
         range.start,
         range.end,
         filters.range === "week" ? "logged-days" : "period-days",
+        periodRecordedDayCount,
       ),
-    [categories, filters.range, range.end, range.start, statsGroups, trackedActiveBlocks],
+    [
+      categories,
+      filters.range,
+      periodRecordedDayCount,
+      range.end,
+      range.start,
+      statsGroups,
+      trackedActiveBlocks,
+    ],
   );
   const heatmapData = useMemo(
     () =>
@@ -482,11 +532,11 @@ function StatsView({
   const yearPressureData = useMemo(
     () =>
       calculateYearPressureLevel(
-        filteredTasks,
-        filteredBlocks,
+        pressureTasks,
+        pressureBlocks,
         range.start.getFullYear(),
       ),
-    [filteredBlocks, filteredTasks, range.start],
+    [pressureBlocks, pressureTasks, range.start],
   );
   const [previewStatsDate, setPreviewStatsDate] = useState<Date | undefined>();
   const selectedHeatmapDay = useMemo(
@@ -511,22 +561,14 @@ function StatsView({
           1,
         )}h - high ${sleepStats.longestDay.label} ${sleepStats.longestDay.hours.toFixed(1)}h`
       : "";
-  const sleepDaysDetail =
-    sleepStats.averageDayCount === 7
-      ? `${sleepStats.daysLogged} / 7 days logged`
-      : `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days`;
-  const monthAverageDayCount = getElapsedPeriodDayCount(range.start, range.end);
+  const sleepDaysDetail = `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} recorded days`;
   const yearCoverageWindow = useMemo(
     () => getYearStatsCoverageWindow(timeBlocks, range.start.getFullYear()),
     [range.start, timeBlocks],
   );
-  const yearAverageDayCount = yearCoverageWindow?.dayCount ?? 1;
-  const yearWeekCount = yearCoverageWindow?.weekCount ?? 1;
-  const yearCoverageDetail = yearCoverageWindow
-    ? `since ${coverageDateFormatter.format(yearCoverageWindow.start)}`
-    : "No recorded days yet";
+  const yearAverageDayCount = yearCoverageWindow?.dayCount ?? 0;
   const yearCoverageWeeksDetail = yearCoverageWindow
-    ? `over ${yearCoverageWindow.weekCount.toFixed(1)} recorded weeks`
+    ? `over ${yearCoverageWindow.weekCount.toFixed(1)} equivalent recorded weeks`
     : "No recorded weeks yet";
   const yearMonthlyProductiveHours = useMemo(
     () =>
@@ -613,6 +655,7 @@ function StatsView({
             yearCoverageWindow.start,
             addCalendarDays(yearCoverageWindow.end, 1),
             "period-days",
+            yearCoverageWindow.dayCount,
           )
         : null,
     [categories, statsGroups, trackedActiveBlocks, yearCoverageWindow],
@@ -634,8 +677,11 @@ function StatsView({
     },
     {
       label: "Average/day",
-      value: formatHours(summary.activeHours / 7),
-      detail: "Productive time divided by 7",
+      value: formatHours(summary.averageSelectedHoursPerDay),
+      detail:
+        periodRecordedDayCount > 0
+          ? `Productive time over ${periodRecordedDayCount} recorded days`
+          : "No recorded days yet",
     },
     {
       label: "Avg sleep",
@@ -672,14 +718,14 @@ function StatsView({
     },
     {
       label: "Avg productive/week",
-      value: formatHours(summary.activeHours / yearWeekCount),
+      value: formatHours(summary.averageSelectedHoursPerWeek),
       detail: yearCoverageWeeksDetail,
     },
     {
       label: "Avg productive/day",
-      value: formatHours(summary.activeHours / yearAverageDayCount),
-      detail: yearCoverageWindow
-        ? `Productive time ${yearCoverageDetail}`
+      value: formatHours(summary.averageSelectedHoursPerDay),
+      detail: yearAverageDayCount > 0
+        ? `Productive time over ${yearAverageDayCount} recorded days`
         : "No recorded days yet",
     },
     {
@@ -717,8 +763,11 @@ function StatsView({
     },
     {
       label: "Average/day",
-      value: formatHours(summary.activeHours / monthAverageDayCount),
-      detail: `Productive time over ${monthAverageDayCount} days`,
+      value: formatHours(summary.averageSelectedHoursPerDay),
+      detail:
+        periodRecordedDayCount > 0
+          ? `Productive time over ${periodRecordedDayCount} recorded days`
+          : "No recorded days yet",
     },
     {
       label: "Avg sleep",
@@ -726,7 +775,7 @@ function StatsView({
         sleepStats.totalHours > 0
           ? `${sleepStats.averageHoursPerDay.toFixed(1)}h/day`
           : "No sleep logged",
-      detail: `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} days${sleepRangeDetail}`,
+      detail: `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} recorded days${sleepRangeDetail}`,
     },
     {
       label: "Tasks due completion",
@@ -877,9 +926,10 @@ function StatsView({
           />
           <SleepByDayChart data={monthSleepByDayData} />
           <PressureLevelChart
-            ariaLabel="Month pressure level by day"
+            ariaLabel="Month pressure index by day"
             data={monthPressureData}
             emptyMessage="No task pressure data for this month."
+            xAxisMode="date"
           />
         </div>
       </StatsSection>
@@ -957,7 +1007,7 @@ function StatsView({
           title={dailyChartTitle}
         />
         <PressureLevelChart
-          ariaLabel="Year pressure level by day"
+          ariaLabel="Year pressure index by day"
           data={yearPressureData}
           emptyMessage="No task pressure data for this year."
         />

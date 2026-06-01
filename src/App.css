@@ -1961,7 +1961,12 @@
   grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
-  border: 1px solid var(--task-accent, var(--color-border-muted));
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--task-border, var(--color-border-muted)) 20%,
+      var(--color-border-muted)
+    );
   border-left: 4px solid var(--task-accent, var(--color-border-muted));
   border-radius: 2px;
   background: rgb(from var(--task-background, var(--color-bg)) r g b / 0.07);
@@ -1969,8 +1974,9 @@
 }
 
 .inspector-task-row.selected {
+  border-color: var(--task-accent, var(--color-border-muted));
   box-shadow:
-    0 0 0 1px rgba(34, 211, 238, 0.26),
+    0 0 0 1px var(--task-border, var(--color-border-muted)),
     inset 0 0 0 1px var(--task-accent, var(--color-border-muted));
 }
 
@@ -2374,17 +2380,22 @@
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--task-border);
-  border-left: 4px solid var(--task-accent);
+  border: 1px solid
+    color-mix(in srgb, var(--task-border) 70%, var(--color-border-muted));
+  border-left: 4px solid color-mix(in srgb, var(--task-border) 70%, var(--color-border-muted));
   border-radius: 2px;
   background: rgb(from var(--task-background) r g b / 0.07);
   padding: 10px;
 }
 
-.task-card:hover,
-.task-card.selected {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.28);
+.task-card:hover {
+  border-color: color-mix(in srgb, var(--task-border) 100%, var(--color-border));
+}
+
+.task-card.selected,
+.task-card.selected:hover {
+  border-color: var(--task-accent);
+  box-shadow: 0 0 0 1px var(--task-border);
 }
 
 .task-card.complete {
@@ -3980,6 +3991,12 @@
   min-width: 0;
 }
 
+.pressure-level-helper {
+  margin: 4px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .pressure-line-chart {
   height: 260px;
   color: #22d3ee;
@@ -3998,12 +4015,25 @@
 }
 
 .pressure-axis-row text,
-.pressure-axis-label {
+.pressure-axis-label,
+.pressure-reference-label {
   fill: var(--color-text-muted);
   font-size: 11px;
 }
 
 .pressure-axis-row text {
+  text-anchor: end;
+}
+
+.pressure-reference-line {
+  stroke: rgba(250, 204, 21, 0.62);
+  stroke-dasharray: 5 5;
+  stroke-width: 1.5;
+}
+
+.pressure-reference-label {
+  fill: #fde047;
+  font-weight: 800;
   text-anchor: end;
 }
 
