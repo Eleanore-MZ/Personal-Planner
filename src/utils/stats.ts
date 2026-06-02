@@ -116,6 +116,10 @@ export type PressureDatum = {
   smoothedPressure: number | null;
   duePressure: number;
   duePoints: number;
+  examMarkerColor: string | null;
+  examPressure: number;
+  examsOnDayCount: number;
+  examsWithin3DaysCount: number;
   tasksDueWithin3DaysCount: number;
   taskWorkHours: number;
   workPoints: number;
@@ -1481,6 +1485,28 @@ const pressurePriorityWeights: Record<Task["priority"], number> = {
   low: 0.75,
   medium: 1,
 };
+const examPressurePeakWeight = 2;
+
+function parsePressureDueDate(value: string) {
+  const trimmedValue = value.trim();
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedValue);
+
+  if (dateOnlyMatch) {
+    const year = Number(dateOnlyMatch[1]);
+    const month = Number(dateOnlyMatch[2]) - 1;
+    const day = Number(dateOnlyMatch[3]);
+    const date = new Date(year, month, day);
+
+    return date.getFullYear() === year &&
+      date.getMonth() === month &&
+      date.getDate() === day
+      ? date
+      : null;
+  }
+
+  const date = new Date(trimmedValue);
+  return Number.isNaN(date.getTime()) ? null : startOfDay(date);
+}
 
 function getPressureDueWeight(dueDate: Date, dayStart: Date) {
   const dueDay = startOfDay(dueDate);
@@ -1515,6 +1541,39 @@ function getPressureDueWeight(dueDate: Date, dayStart: Date) {
   return 0;
 }
 
+function getExamPressureWeight(examDate: Date, dayStart: Date) {
+  const examDay = startOfDay(examDate);
+  const examDayIndex = Date.UTC(
+    examDay.getFullYear(),
+    examDay.getMonth(),
+    examDay.getDate(),
+  );
+  const currentDayIndex = Date.UTC(
+    dayStart.getFullYear(),
+    dayStart.getMonth(),
+    dayStart.getDate(),
+  );
+  const daysUntilExam = (examDayIndex - currentDayIndex) / oneDayMs;
+
+  if (daysUntilExam === 0) {
+    return 1;
+  }
+
+  if (daysUntilExam === 1) {
+    return 0.7;
+  }
+
+  if (daysUntilExam === 2) {
+    return 0.45;
+  }
+
+  if (daysUntilExam === 3) {
+    return 0.25;
+  }
+
+  return 0;
+}
+
 function getPressureDatumFields(
   day: Omit<PressureDatum, "rawPressure" | "smoothedPressure">,
 ) {
@@ -1522,6 +1581,10 @@ function getPressureDatumFields(
     date: day.date,
     duePressure: day.duePressure,
     duePoints: day.duePoints,
+    examMarkerColor: day.examMarkerColor,
+    examPressure: day.examPressure,
+    examsOnDayCount: day.examsOnDayCount,
+    examsWithin3DaysCount: day.examsWithin3DaysCount,
     label: day.label,
     tasksDueWithin3DaysCount: day.tasksDueWithin3DaysCount,
     taskWorkHours: day.taskWorkHours,
@@ -1529,23 +1592,70 @@ function getPressureDatumFields(
   };
 }
 
-function getPressureTaskDate(task: Task, rangeStart: Date, rangeEnd: Date) {
+function getPressureTaskCoverageRange(
+  task: Task,
+  rangeStart: Date,
+  rangeEnd: Date,
+) {
   if (!task.dueDate || task.status === "canceled") {
     return null;
   }
 
-  const dueDate = startOfDay(new Date(task.dueDate));
-  return dueDate.getTime() >= rangeStart.getTime() && dueDate.getTime() < rangeEnd.getTime()
-    ? dueDate
-    : null;
+  const dueDate = parsePressureDueDate(task.dueDate);
+  if (!dueDate) {
+    return null;
+  }
+
+  const taskCoverageStart = addCalendarDays(dueDate, -3);
+  const taskCoverageEnd = addCalendarDays(dueDate, 3);
+  const lastRangeDay = addCalendarDays(rangeEnd, -1);
+
+  if (
+    taskCoverageEnd.getTime() < rangeStart.getTime() ||
+    taskCoverageStart.getTime() > lastRangeDay.getTime()
+  ) {
+    return null;
+  }
+
+  return {
+    end: new Date(
+      Math.min(taskCoverageEnd.getTime(), lastRangeDay.getTime()),
+    ),
+    start: new Date(
+      Math.max(taskCoverageStart.getTime(), rangeStart.getTime()),
+    ),
+  };
+}
+
+function getPressureExamCoverageRange(
+  examDate: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+) {
+  const examCoverageStart = addCalendarDays(examDate, -3);
+  const lastRangeDay = addCalendarDays(rangeEnd, -1);
+
+  if (
+    examDate.getTime() < rangeStart.getTime() ||
+    examCoverageStart.getTime() > lastRangeDay.getTime()
+  ) {
+    return null;
+  }
+
+  return {
+    end: new Date(Math.min(examDate.getTime(), lastRangeDay.getTime())),
+    start: new Date(
+      Math.max(examCoverageStart.getTime(), rangeStart.getTime()),
+    ),
+  };
 }
 
 function getPressureCoverageWindow(
   tasks: Task[],
   timeBlocks: TimeBlock[],
+  examDates: Date[],
   rangeStart: Date,
   rangeEnd: Date,
-  currentDate = new Date(),
 ) {
   const start = startOfDay(rangeStart);
   const end = startOfDay(rangeEnd);
@@ -1568,10 +1678,24 @@ function getPressureCoverageWindow(
   });
 
   tasks.forEach((task) => {
-    const taskDate = getPressureTaskDate(task, start, end);
+    const taskCoverageRange = getPressureTaskCoverageRange(task, start, end);
 
-    if (taskDate) {
-      relevantTimes.push(taskDate.getTime());
+    if (taskCoverageRange) {
+      relevantTimes.push(taskCoverageRange.start.getTime());
+      relevantTimes.push(taskCoverageRange.end.getTime());
+    }
+  });
+
+  examDates.forEach((examDate) => {
+    const examCoverageRange = getPressureExamCoverageRange(
+      examDate,
+      start,
+      end,
+    );
+
+    if (examCoverageRange) {
+      relevantTimes.push(examCoverageRange.start.getTime());
+      relevantTimes.push(examCoverageRange.end.getTime());
     }
   });
 
@@ -1580,19 +1704,7 @@ function getPressureCoverageWindow(
   }
 
   const coverageStart = startOfDay(new Date(Math.min(...relevantTimes)));
-  const currentDay = startOfDay(currentDate);
-  const rangeContainsToday =
-    currentDay.getTime() >= start.getTime() && currentDay.getTime() < end.getTime();
-  const coverageEnd = rangeContainsToday
-    ? startOfDay(
-        new Date(
-          Math.min(
-            Math.max(currentDate.getTime(), start.getTime()),
-            end.getTime() - 1,
-          ),
-        ),
-      )
-    : startOfDay(new Date(Math.max(...relevantTimes)));
+  const coverageEnd = startOfDay(new Date(Math.max(...relevantTimes)));
 
   if (coverageStart.getTime() > coverageEnd.getTime()) {
     return null;
@@ -1604,6 +1716,7 @@ function getPressureCoverageWindow(
 export function calculatePressureLevel(
   tasks: Task[],
   timeBlocks: TimeBlock[],
+  categories: Category[],
   start: Date,
   end: Date,
   smoothingDays = 3,
@@ -1615,10 +1728,48 @@ export function calculatePressureLevel(
   > = [];
   const date = startOfDay(start);
   const rangeEnd = startOfDay(end);
-  const coverageWindow = getPressureCoverageWindow(tasks, timeBlocks, date, rangeEnd);
-  const pressureTasks = tasks.filter(
-    (task) => task.dueDate && task.status !== "canceled",
+  const examCategoryIds = new Set(
+    categories
+      .filter((category) => category.name.trim().toLowerCase() === "exam")
+      .map((category) => category.id),
   );
+  const examOccurrences = timeBlocks.flatMap((block) => {
+    const category = categories.find(
+      (currentCategory) => currentCategory.id === block.categoryId,
+    );
+    if (
+      !isActiveBlock(block) ||
+      !category ||
+      !examCategoryIds.has(category.id)
+    ) {
+      return [];
+    }
+
+    const examDate = startOfDay(new Date(block.startsAt));
+    return Number.isNaN(examDate.getTime())
+      ? []
+      : [
+          {
+            date: examDate,
+            markerColor: getCategoryColorValues(category.color).accent,
+          },
+        ];
+  });
+  const coverageWindow = getPressureCoverageWindow(
+    tasks,
+    timeBlocks,
+    examOccurrences.map((exam) => exam.date),
+    date,
+    rangeEnd,
+  );
+  const pressureTasks = tasks.flatMap((task) => {
+    if (!task.dueDate || task.status === "canceled") {
+      return [];
+    }
+
+    const dueDate = parsePressureDueDate(task.dueDate);
+    return dueDate ? [{ dueDate, priority: task.priority }] : [];
+  });
   const pressureBlocks = timeBlocks.filter(
     (block) =>
       isActiveBlock(block) &&
@@ -1640,23 +1791,24 @@ export function calculatePressureLevel(
         dayStart.getTime() <= coverageWindow.end.getTime(),
     );
     const duePressure = inCoverage ? pressureTasks.reduce((total, task) => {
-      if (!task.dueDate) {
-        return total;
-      }
-
-      const dueWeight = getPressureDueWeight(new Date(task.dueDate), dayStart);
+      const dueWeight = getPressureDueWeight(task.dueDate, dayStart);
       return (
         total +
         dueWeight * pressurePriorityWeights[task.priority]
       );
     }, 0) : 0;
     const tasksDueWithin3DaysCount = inCoverage ? pressureTasks.filter((task) => {
-      if (!task.dueDate) {
-        return false;
-      }
-
-      return getPressureDueWeight(new Date(task.dueDate), dayStart) > 0;
+      return getPressureDueWeight(task.dueDate, dayStart) > 0;
     }).length : 0;
+    const examPressure = inCoverage ? examOccurrences.reduce((total, exam) => {
+      return total + getExamPressureWeight(exam.date, dayStart) * examPressurePeakWeight;
+    }, 0) : 0;
+    const examsWithin3DaysCount = inCoverage ? examOccurrences.filter((exam) => {
+      return getExamPressureWeight(exam.date, dayStart) > 0;
+    }).length : 0;
+    const examsOnDay = inCoverage ? examOccurrences.filter((exam) => {
+      return isSameCalendarDay(exam.date, dayStart);
+    }) : [];
     const taskWorkHours = inCoverage
       ?
       pressureBlocks.reduce(
@@ -1664,13 +1816,17 @@ export function calculatePressureLevel(
         0,
       ) / 60
       : 0;
-    const duePoints = 55 * (duePressure / dueRef);
+    const duePoints = 55 * ((duePressure + examPressure) / dueRef);
     const workPoints = 45 * (taskWorkHours / workRef);
 
     rawDays.push({
       date: dayStart.toISOString(),
       duePressure,
       duePoints,
+      examMarkerColor: examsOnDay[0]?.markerColor ?? null,
+      examPressure,
+      examsOnDayCount: examsOnDay.length,
+      examsWithin3DaysCount,
       inCoverage,
       label: dayLabelFormatter.format(dayStart),
       tasksDueWithin3DaysCount,
@@ -1743,11 +1899,13 @@ export function calculatePressureLevel(
 export function calculateYearPressureLevel(
   tasks: Task[],
   timeBlocks: TimeBlock[],
+  categories: Category[],
   year: number,
 ): PressureDatum[] {
   return calculatePressureLevel(
     tasks,
     timeBlocks,
+    categories,
     new Date(year, 0, 1),
     new Date(year + 1, 0, 1),
     7,

@@ -195,7 +195,7 @@ function StatsView({
       return filterStatsTimeBlocks(
         timeBlocks,
         filters.categoryId,
-        false,
+        true,
         filters.includeUncategorized,
         categories,
         filters.includeStatsExcludedCategories,
@@ -412,10 +412,11 @@ function StatsView({
       calculatePressureLevel(
         pressureTasks,
         pressureBlocks,
+        categories,
         range.start,
         range.end,
       ),
-    [pressureBlocks, pressureTasks, range.end, range.start],
+    [categories, pressureBlocks, pressureTasks, range.end, range.start],
   );
   const yearSleepByMonthData = useMemo(
     () =>
@@ -534,9 +535,10 @@ function StatsView({
       calculateYearPressureLevel(
         pressureTasks,
         pressureBlocks,
+        categories,
         range.start.getFullYear(),
       ),
-    [pressureBlocks, pressureTasks, range.start],
+    [categories, pressureBlocks, pressureTasks, range.start],
   );
   const [previewStatsDate, setPreviewStatsDate] = useState<Date | undefined>();
   const selectedHeatmapDay = useMemo(

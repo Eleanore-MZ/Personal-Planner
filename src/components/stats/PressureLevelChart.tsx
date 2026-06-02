@@ -21,6 +21,7 @@ const dayFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
 });
 const referencePressure = 100;
+const singletonSegmentHalfWidth = 4;
 
 type ChartPoint = PressureDatum & {
   rawPressure: number;
@@ -40,20 +41,64 @@ function buildSmoothPath(points: ChartPoint[]) {
   }
 
   if (points.length === 1) {
-    return `M ${points[0].x} ${points[0].y}`;
+    return `M ${points[0].x - singletonSegmentHalfWidth} ${
+      points[0].y
+    } L ${points[0].x + singletonSegmentHalfWidth} ${points[0].y}`;
   }
+
+  const slopes = points.slice(0, -1).map((point, index) => {
+    const nextPoint = points[index + 1];
+    return (nextPoint.y - point.y) / (nextPoint.x - point.x);
+  });
+  const tangents = points.map((_, index) => {
+    if (index === 0) {
+      return slopes[0];
+    }
+
+    if (index === points.length - 1) {
+      return slopes[slopes.length - 1];
+    }
+
+    return (slopes[index - 1] + slopes[index]) / 2;
+  });
+
+  slopes.forEach((slope, index) => {
+    if (slope === 0) {
+      tangents[index] = 0;
+      tangents[index + 1] = 0;
+      return;
+    }
+
+    const tangentRatio = tangents[index] / slope;
+    const nextTangentRatio = tangents[index + 1] / slope;
+    const squaredRatioTotal =
+      tangentRatio * tangentRatio + nextTangentRatio * nextTangentRatio;
+
+    if (squaredRatioTotal > 9) {
+      const scale = 3 / Math.sqrt(squaredRatioTotal);
+      tangents[index] = scale * tangentRatio * slope;
+      tangents[index + 1] = scale * nextTangentRatio * slope;
+    }
+  });
 
   const segments = [`M ${points[0].x} ${points[0].y}`];
 
   for (let index = 0; index < points.length - 1; index += 1) {
-    const previous = points[Math.max(0, index - 1)];
     const current = points[index];
     const next = points[index + 1];
-    const following = points[Math.min(points.length - 1, index + 2)];
-    const controlOneX = current.x + (next.x - previous.x) / 6;
-    const controlOneY = current.y + (next.y - previous.y) / 6;
-    const controlTwoX = next.x - (following.x - current.x) / 6;
-    const controlTwoY = next.y - (following.y - current.y) / 6;
+    const width = next.x - current.x;
+    const minimumY = Math.min(current.y, next.y);
+    const maximumY = Math.max(current.y, next.y);
+    const controlOneX = current.x + width / 3;
+    const controlOneY = Math.min(
+      maximumY,
+      Math.max(minimumY, current.y + (tangents[index] * width) / 3),
+    );
+    const controlTwoX = next.x - width / 3;
+    const controlTwoY = Math.min(
+      maximumY,
+      Math.max(minimumY, next.y - (tangents[index + 1] * width) / 3),
+    );
 
     segments.push(
       `C ${controlOneX} ${controlOneY}, ${controlTwoX} ${controlTwoY}, ${next.x} ${next.y}`,
@@ -61,6 +106,20 @@ function buildSmoothPath(points: ChartPoint[]) {
   }
 
   return segments.join(" ");
+}
+
+function getSegmentXBounds(segment: ChartPoint[]) {
+  if (segment.length === 1) {
+    return {
+      end: segment[0].x + singletonSegmentHalfWidth,
+      start: segment[0].x - singletonSegmentHalfWidth,
+    };
+  }
+
+  return {
+    end: segment[segment.length - 1].x,
+    start: segment[0].x,
+  };
 }
 
 function getLineSegments(points: PositionedPressureDatum[]) {
@@ -232,9 +291,8 @@ function PressureLevelChart({
 
             {lineSegments.map((segment) => {
               const linePath = buildSmoothPath(segment);
-              const areaPath = `${linePath} L ${
-                segment[segment.length - 1].x
-              } ${baselineY} L ${segment[0].x} ${baselineY} Z`;
+              const segmentBounds = getSegmentXBounds(segment);
+              const areaPath = `${linePath} L ${segmentBounds.end} ${baselineY} L ${segmentBounds.start} ${baselineY} Z`;
 
               return (
                 <path
@@ -251,6 +309,23 @@ function PressureLevelChart({
                 key={`line-${segment[0].date}-${segment[segment.length - 1].date}`}
               />
             ))}
+            {points
+              .filter(
+                (point): point is ChartPoint =>
+                  hasPressureValue(point) &&
+                  point.examsOnDayCount > 0 &&
+                  Boolean(point.examMarkerColor),
+              )
+              .map((point) => (
+                <circle
+                  className="pressure-exam-marker"
+                  cx={point.x}
+                  cy={point.y}
+                  fill={point.examMarkerColor ?? undefined}
+                  key={`exam-${point.date}`}
+                  r="4"
+                />
+              ))}
 
             {xAxisLabels.map((point) => (
               <text
@@ -280,7 +355,10 @@ function PressureLevelChart({
                   {point.smoothedPressure.toFixed(0)}, raw pressure index{" "}
                   {point.rawPressure.toFixed(0)}, due pressure{" "}
                   {point.duePressure.toFixed(1)}, due points{" "}
-                  {point.duePoints.toFixed(1)}, task work{" "}
+                  {point.duePoints.toFixed(1)}, exam pressure{" "}
+                  {point.examPressure.toFixed(1)}, upcoming exams within 3 days{" "}
+                  {point.examsWithin3DaysCount}, exams today{" "}
+                  {point.examsOnDayCount}, task work{" "}
                   {point.taskWorkHours.toFixed(1)}h, work points{" "}
                   {point.workPoints.toFixed(1)}, tasks due within +/-3 days{" "}
                   {point.tasksDueWithin3DaysCount}

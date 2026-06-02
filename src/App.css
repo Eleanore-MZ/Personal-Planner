@@ -4051,6 +4051,12 @@
   filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.12));
 }
 
+.pressure-exam-marker {
+  pointer-events: none;
+  stroke: red;
+  stroke-width: 0;
+}
+
 .pressure-hover-target {
   fill: transparent;
   pointer-events: all;
