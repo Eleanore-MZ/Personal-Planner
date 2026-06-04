@@ -493,6 +493,136 @@
   gap: 6px;
 }
 
+.timezone-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timezone-chip-list {
+  display: flex;
+  gap: 4px;
+}
+
+.timezone-chip {
+  max-width: 116px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  padding: 6px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.timezone-chip:hover,
+.timezone-chip.active {
+  border-color: var(--color-accent-border);
+  color: var(--color-text-strong);
+}
+
+.timezone-chip.active {
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+}
+
+.timezone-toolbar-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  width: min(520px, calc(100vw - 30px));
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-bg-deep);
+  padding: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+.timezone-manager {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.timezone-manager.compact {
+  margin-top: 0;
+}
+
+.timezone-manager-list {
+  display: grid;
+  gap: 6px;
+}
+
+.timezone-manager-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border-muted);
+  border-left: 3px solid transparent;
+  border-radius: 2px;
+  background: var(--color-surface);
+  padding: 6px;
+}
+
+.timezone-manager-row.primary {
+  border-left-color: var(--color-accent);
+  background: var(--color-accent-muted);
+}
+
+.timezone-primary-button,
+.timezone-remove-button {
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.timezone-primary-button {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.timezone-primary-button small,
+.timezone-manager-row > span {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timezone-remove-button {
+  color: #ff7b72;
+  font-size: 11px;
+}
+
+.timezone-remove-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.timezone-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.timezone-add-row input {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  padding: 8px 9px;
+}
+
 .icon-button {
   min-width: 74px;
 }
@@ -1062,12 +1192,16 @@
 }
 
 .week-board {
+  --timezone-rails: 1;
+  --timezone-rail-width: 56px;
+  position: relative;
   display: grid;
-  grid-template-columns: 72px minmax(760px, 1fr);
-  grid-template-rows: 44px auto auto minmax(0, 1fr);
+  grid-template-columns: var(--timezone-rail-width) minmax(760px, 1fr);
+  grid-template-rows: 38px auto auto minmax(0, 1fr);
 }
 
 .week-header-spacer {
+  display: flex;
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-deep);
@@ -1096,13 +1230,80 @@
 }
 
 .hour-labels {
+  position: relative;
+  flex: 0 0 46px;
   background: var(--color-bg-deep);
   border-right: 1px solid var(--color-border);
 }
 
-.week-board .hour-labels {
+.hour-labels.primary {
+  flex-basis: 56px;
+}
+
+.week-board .hour-label-rails {
+  display: flex;
   grid-column: 1;
   grid-row: 4;
+}
+
+.timezone-rail-headers {
+  display: flex;
+  width: 100%;
+}
+
+.timezone-rail-header {
+  display: grid;
+  flex: 0 0 46px;
+  align-content: center;
+  gap: 1px;
+  min-width: 0;
+  border-right: 1px solid var(--color-border-muted);
+  color: var(--color-text-muted);
+  padding: 2px 4px;
+  font-size: 9px;
+}
+
+.timezone-rail-header.primary {
+  flex-basis: 56px;
+  color: var(--color-accent-strong);
+}
+
+.timezone-rail-header strong,
+.timezone-rail-header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timezone-rail-header small {
+  color: #facc15;
+  font-size: 8px;
+}
+
+.calendar-timezone-warning {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 12;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: min(680px, calc(100% - 16px));
+  margin: 0;
+  border: 1px solid rgba(250, 204, 21, 0.46);
+  border-radius: 2px;
+  background: rgba(48, 38, 4, 0.96);
+  color: #facc15;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.calendar-timezone-warning button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .week-all-day-label,
@@ -1299,9 +1500,9 @@
 
 .hour-label {
   height: var(--calendar-hour-height);
-  padding: 8px 10px 0 0;
+  padding: 8px 5px 0 0;
   color: var(--color-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   text-align: right;
 }
 

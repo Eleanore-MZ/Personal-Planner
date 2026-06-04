@@ -455,6 +455,7 @@ function createSchema(database) {
       recurrence_end_date TEXT,
       recurrence_count INTEGER,
       recurrence_exceptions TEXT,
+      time_zone TEXT,
       FOREIGN KEY (category_id) REFERENCES categories(id),
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
@@ -590,6 +591,9 @@ function createSchema(database) {
   if (!timeBlockColumnNames.has("recurrence_exceptions")) {
     database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT").run();
   }
+  if (!timeBlockColumnNames.has("time_zone")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN time_zone TEXT").run();
+  }
   const statsGroupColumns = database.prepare("PRAGMA table_info(stats_groups)").all();
   const statsGroupColumnNames = new Set(statsGroupColumns.map((column) => column.name));
   if (!statsGroupColumnNames.has("created_at")) {
@@ -649,14 +653,14 @@ function seedDefaults(database) {
       status, outcome, kind, source, is_all_day,
       recurrence_frequency, recurrence_interval, recurrence_weekdays,
       recurrence_end_mode, recurrence_end_date, recurrence_count,
-      recurrence_exceptions
+      recurrence_exceptions, time_zone
     )
     VALUES (
       @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
       @status, @outcome, @kind, @source, @isAllDay,
       @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
       @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
-      @recurrenceExceptions
+      @recurrenceExceptions, @timeZone
     )
   `);
   const seed = database.transaction(() => {
@@ -698,7 +702,8 @@ function seedDefaults(database) {
         recurrenceEndMode: block.recurrenceEndMode ?? (block.recurrenceEndDate ? "on" : "never"),
         recurrenceEndDate: block.recurrenceEndDate ?? null,
         recurrenceCount: block.recurrenceCount ?? null,
-        recurrenceExceptions: serializeRecurrenceExceptions(block.recurrenceExceptions)
+        recurrenceExceptions: serializeRecurrenceExceptions(block.recurrenceExceptions),
+        timeZone: block.timeZone ?? null
       })
     );
   });
@@ -1066,7 +1071,8 @@ function getTimeBlocks() {
     ),
     recurrenceEndDate: row.recurrence_end_date ?? void 0,
     recurrenceCount: row.recurrence_count ?? void 0,
-    recurrenceExceptions: parseRecurrenceExceptions(row.recurrence_exceptions)
+    recurrenceExceptions: parseRecurrenceExceptions(row.recurrence_exceptions),
+    timeZone: row.time_zone ?? void 0
   }));
 }
 function createTimeBlock(input) {
@@ -1088,7 +1094,8 @@ function createTimeBlock(input) {
     recurrenceEndMode: input.recurrenceEndMode ?? (input.recurrenceEndDate ? "on" : "never"),
     recurrenceEndDate: input.recurrenceEndDate,
     recurrenceCount: input.recurrenceCount,
-    recurrenceExceptions: input.recurrenceExceptions
+    recurrenceExceptions: input.recurrenceExceptions,
+    timeZone: input.timeZone
   };
   getDb().prepare(`
       INSERT INTO time_blocks (
@@ -1096,14 +1103,14 @@ function createTimeBlock(input) {
         status, outcome, kind, source, is_all_day,
         recurrence_frequency, recurrence_interval, recurrence_weekdays,
         recurrence_end_mode, recurrence_end_date, recurrence_count,
-        recurrence_exceptions
+        recurrence_exceptions, time_zone
       )
       VALUES (
         @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
         @status, @outcome, @kind, @source, @isAllDay,
         @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
         @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
-        @recurrenceExceptions
+        @recurrenceExceptions, @timeZone
       )
     `).run({
     ...timeBlock,
@@ -1116,7 +1123,8 @@ function createTimeBlock(input) {
     recurrenceEndMode: timeBlock.recurrenceEndMode ?? "never",
     recurrenceEndDate: timeBlock.recurrenceEndDate ?? null,
     recurrenceCount: timeBlock.recurrenceCount ?? null,
-    recurrenceExceptions: serializeRecurrenceExceptions(timeBlock.recurrenceExceptions)
+    recurrenceExceptions: serializeRecurrenceExceptions(timeBlock.recurrenceExceptions),
+    timeZone: timeBlock.timeZone ?? null
   });
   return timeBlock;
 }
@@ -1140,7 +1148,8 @@ function updateTimeBlock(input) {
           recurrence_end_mode = @recurrenceEndMode,
           recurrence_end_date = @recurrenceEndDate,
           recurrence_count = @recurrenceCount,
-          recurrence_exceptions = @recurrenceExceptions
+          recurrence_exceptions = @recurrenceExceptions,
+          time_zone = @timeZone
       WHERE id = @id
     `).run({
     ...input,
@@ -1156,7 +1165,8 @@ function updateTimeBlock(input) {
     recurrenceEndMode: input.recurrenceEndMode ?? "never",
     recurrenceEndDate: input.recurrenceEndDate ?? null,
     recurrenceCount: input.recurrenceCount ?? null,
-    recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions)
+    recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions),
+    timeZone: input.timeZone ?? null
   });
   return {
     ...input,
@@ -1187,7 +1197,8 @@ const getSeriesUpdate = (seriesBlock, occurrence, updatedBlock) => {
     recurrenceEndMode: updatedBlock.recurrenceEndMode ?? seriesBlock.recurrenceEndMode,
     recurrenceEndDate: updatedBlock.recurrenceEndDate,
     recurrenceCount: updatedBlock.recurrenceCount,
-    recurrenceExceptions: seriesBlock.recurrenceExceptions
+    recurrenceExceptions: seriesBlock.recurrenceExceptions,
+    timeZone: updatedBlock.timeZone ?? seriesBlock.timeZone
   };
 };
 const getSingleOccurrenceBlock = (updatedBlock) => ({

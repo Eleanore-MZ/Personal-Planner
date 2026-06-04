@@ -117,6 +117,7 @@ type TimeBlockRow = {
   recurrence_end_date: string | null
   recurrence_count: number | null
   recurrence_exceptions: string | null
+  time_zone: string | null
 }
 
 let db: Database.Database | undefined
@@ -365,6 +366,7 @@ function createSchema(database: Database.Database) {
       recurrence_end_date TEXT,
       recurrence_count INTEGER,
       recurrence_exceptions TEXT,
+      time_zone TEXT,
       FOREIGN KEY (category_id) REFERENCES categories(id),
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
@@ -546,6 +548,11 @@ function createSchema(database: Database.Database) {
       .prepare('ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT')
       .run()
   }
+  if (!timeBlockColumnNames.has('time_zone')) {
+    database
+      .prepare('ALTER TABLE time_blocks ADD COLUMN time_zone TEXT')
+      .run()
+  }
 
   const statsGroupColumns = database
     .prepare('PRAGMA table_info(stats_groups)')
@@ -623,14 +630,14 @@ function seedDefaults(database: Database.Database) {
       status, outcome, kind, source, is_all_day,
       recurrence_frequency, recurrence_interval, recurrence_weekdays,
       recurrence_end_mode, recurrence_end_date, recurrence_count,
-      recurrence_exceptions
+      recurrence_exceptions, time_zone
     )
     VALUES (
       @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
       @status, @outcome, @kind, @source, @isAllDay,
       @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
       @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
-      @recurrenceExceptions
+      @recurrenceExceptions, @timeZone
     )
   `)
 
@@ -673,6 +680,7 @@ function seedDefaults(database: Database.Database) {
         recurrenceEndDate: block.recurrenceEndDate ?? null,
         recurrenceCount: block.recurrenceCount ?? null,
         recurrenceExceptions: serializeRecurrenceExceptions(block.recurrenceExceptions),
+        timeZone: block.timeZone ?? null,
       }),
     )
   })
@@ -1121,6 +1129,7 @@ export function getTimeBlocks(): TimeBlock[] {
     recurrenceEndDate: row.recurrence_end_date ?? undefined,
     recurrenceCount: row.recurrence_count ?? undefined,
     recurrenceExceptions: parseRecurrenceExceptions(row.recurrence_exceptions),
+    timeZone: row.time_zone ?? undefined,
   }))
 }
 
@@ -1144,6 +1153,7 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
     recurrenceEndDate: input.recurrenceEndDate,
     recurrenceCount: input.recurrenceCount,
     recurrenceExceptions: input.recurrenceExceptions,
+    timeZone: input.timeZone,
   }
 
   getDb()
@@ -1153,14 +1163,14 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
         status, outcome, kind, source, is_all_day,
         recurrence_frequency, recurrence_interval, recurrence_weekdays,
         recurrence_end_mode, recurrence_end_date, recurrence_count,
-        recurrence_exceptions
+        recurrence_exceptions, time_zone
       )
       VALUES (
         @id, @title, @notes, @categoryId, @taskId, @startsAt, @endsAt,
         @status, @outcome, @kind, @source, @isAllDay,
         @recurrenceFrequency, @recurrenceInterval, @recurrenceWeekdays,
         @recurrenceEndMode, @recurrenceEndDate, @recurrenceCount,
-        @recurrenceExceptions
+        @recurrenceExceptions, @timeZone
       )
     `)
     .run({
@@ -1175,6 +1185,7 @@ export function createTimeBlock(input: CreateTimeBlockInput): TimeBlock {
       recurrenceEndDate: timeBlock.recurrenceEndDate ?? null,
       recurrenceCount: timeBlock.recurrenceCount ?? null,
       recurrenceExceptions: serializeRecurrenceExceptions(timeBlock.recurrenceExceptions),
+      timeZone: timeBlock.timeZone ?? null,
     })
 
   return timeBlock
@@ -1201,7 +1212,8 @@ export function updateTimeBlock(input: UpdateTimeBlockInput): TimeBlock {
           recurrence_end_mode = @recurrenceEndMode,
           recurrence_end_date = @recurrenceEndDate,
           recurrence_count = @recurrenceCount,
-          recurrence_exceptions = @recurrenceExceptions
+          recurrence_exceptions = @recurrenceExceptions,
+          time_zone = @timeZone
       WHERE id = @id
     `)
     .run({
@@ -1219,6 +1231,7 @@ export function updateTimeBlock(input: UpdateTimeBlockInput): TimeBlock {
       recurrenceEndDate: input.recurrenceEndDate ?? null,
       recurrenceCount: input.recurrenceCount ?? null,
       recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions),
+      timeZone: input.timeZone ?? null,
     })
 
   return {
@@ -1261,6 +1274,7 @@ const getSeriesUpdate = (
     recurrenceEndDate: updatedBlock.recurrenceEndDate,
     recurrenceCount: updatedBlock.recurrenceCount,
     recurrenceExceptions: seriesBlock.recurrenceExceptions,
+    timeZone: updatedBlock.timeZone ?? seriesBlock.timeZone,
   }
 }
 

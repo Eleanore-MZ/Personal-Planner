@@ -28,20 +28,35 @@ import type {
   RecurringUpdateScope,
 } from "./types/plannerApi";
 import { useResizablePanels } from "./hooks/useResizablePanels";
+import { CalendarTimeZoneProvider } from "./components/TimeZoneContext";
+import {
+  normalizeCalendarTimeZones,
+  systemTimeZone,
+  toZonedCalendarDate,
+} from "./utils/timezone";
 
 const defaultSettings: AppSettings = {
   weekStartDay: "monday",
   visibleStartHour: 6,
   visibleEndHour: 22,
   compactTodo: false,
+  calendarTimeZones: [systemTimeZone],
+  primaryCalendarTimeZone: systemTimeZone,
 };
 
 const readSettings = () => {
   try {
     const storedSettings = localStorage.getItem("planner-settings");
-    return storedSettings
+    const nextSettings = storedSettings
       ? { ...defaultSettings, ...JSON.parse(storedSettings) }
       : defaultSettings;
+    return {
+      ...nextSettings,
+      ...normalizeCalendarTimeZones(
+        nextSettings.calendarTimeZones,
+        nextSettings.primaryCalendarTimeZone,
+      ),
+    };
   } catch {
     return defaultSettings;
   }
@@ -122,7 +137,9 @@ const orderCategoriesByStoredOrder = (categories: Category[]) => {
 function App() {
   const [activeItem, setActiveItem] = useState<NavItemId>("calendar");
   const [activeView, setActiveView] = useState<CalendarView>("week");
-  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [currentDate, setCurrentDate] = useState(() =>
+    toZonedCalendarDate(new Date(), defaultSettings.primaryCalendarTimeZone),
+  );
   const [categories, setCategories] = useState<Category[]>([]);
   const [statsGroups, setStatsGroups] = useState<StatsGroup[]>([]);
   const [selectedCalendarCategoryId, setSelectedCalendarCategoryId] =
@@ -133,9 +150,11 @@ function App() {
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
-    () => new Date(),
+    () => toZonedCalendarDate(new Date(), defaultSettings.primaryCalendarTimeZone),
   );
-  const [selectedStatsDate, setSelectedStatsDate] = useState(() => new Date());
+  const [selectedStatsDate, setSelectedStatsDate] = useState(() =>
+    toZonedCalendarDate(new Date(), defaultSettings.primaryCalendarTimeZone),
+  );
   const [settings, setSettings] = useState<AppSettings>(() => readSettings());
   const [showHiddenCalendarCategories, setShowHiddenCalendarCategories] =
     useState(false);
@@ -241,7 +260,9 @@ function App() {
   }, [categories, selectedCalendarCategoryId, statsFilters.categoryId]);
 
   const handleToday = () => {
-    setCurrentDate(new Date());
+    setCurrentDate(
+      toZonedCalendarDate(new Date(), settings.primaryCalendarTimeZone),
+    );
     setActiveItem("calendar");
   };
 
@@ -275,7 +296,10 @@ function App() {
   };
 
   const handleCurrentStatsPeriod = () => {
-    const currentPeriodDate = new Date();
+    const currentPeriodDate = toZonedCalendarDate(
+      new Date(),
+      settings.primaryCalendarTimeZone,
+    );
     setSelectedStatsDate(currentPeriodDate);
     setStatsFilters((currentFilters) => ({
       ...currentFilters,
@@ -320,8 +344,13 @@ function App() {
   };
 
   const handleUpdateSettings = (nextSettings: AppSettings) => {
+    const normalizedTimeZones = normalizeCalendarTimeZones(
+      nextSettings.calendarTimeZones,
+      nextSettings.primaryCalendarTimeZone,
+    );
     const normalizedSettings = {
       ...nextSettings,
+      ...normalizedTimeZones,
       visibleStartHour: Math.min(
         nextSettings.visibleStartHour,
         nextSettings.visibleEndHour - 1,
@@ -824,6 +853,7 @@ function App() {
   }
 
   return (
+    <CalendarTimeZoneProvider timeZone={settings.primaryCalendarTimeZone}>
     <div
       className={`app${activeResizeSide ? " resizing-panels" : ""}`}
       style={appStyle}
@@ -853,6 +883,8 @@ function App() {
             onSelectView={setActiveView}
             onToday={handleToday}
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            onUpdateSettings={handleUpdateSettings}
+            settings={settings}
           />
         ) : null}
 
@@ -913,6 +945,8 @@ function App() {
               activeItem === "calendar" ? calendarTimeBlocks : visibleTimeBlocks
             }
             weekStartDay={settings.weekStartDay}
+            timeZone={settings.primaryCalendarTimeZone}
+            timeZones={settings.calendarTimeZones}
             showHiddenCalendarCategories={showHiddenCalendarCategories}
             onToggleHiddenCalendarCategories={setShowHiddenCalendarCategories}
             onSelectBlock={handleSelectBlock}
@@ -1037,6 +1071,7 @@ function App() {
         </div>
       ) : null}
     </div>
+    </CalendarTimeZoneProvider>
   );
 }
 

@@ -17,6 +17,10 @@ import { formatTime } from "../../utils/date";
 import { formatTaskDueDate, isTaskComplete } from "../../utils/tasks";
 import type { WeekStartDay } from "../../types/app";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
+import {
+  resolveCalendarMinute,
+  toZonedCalendarDate,
+} from "../../utils/timezone";
 
 type MonthViewProps = {
   blocks: TimeBlock[];
@@ -34,6 +38,7 @@ type MonthViewProps = {
   selectedTaskId?: string;
   tasks: Task[];
   weekStartDay: WeekStartDay;
+  timeZone: string;
 };
 
 type AllDayResizeEdge = "start" | "end";
@@ -66,19 +71,22 @@ function getDueTasksForDay(tasks: Task[], date: Date) {
 function getDraftTimeBlockForDay(
   date: Date,
   categoryId: string,
+  timeZone: string,
 ): CreateTimeBlockInput {
-  const startsAt = new Date(date);
-  startsAt.setHours(9, 0, 0, 0);
-  const endsAt = new Date(startsAt);
-  endsAt.setHours(10, 0, 0, 0);
+  const startsAt = resolveCalendarMinute(date, 9 * 60, timeZone);
+  const endsAt = resolveCalendarMinute(date, 10 * 60, timeZone);
+  if (startsAt.status !== "valid" || endsAt.status !== "valid") {
+    throw new Error("Unable to schedule the default time across a DST transition.");
+  }
 
   return {
     title: "",
     notes: "",
     categoryId,
-    startsAt: startsAt.toISOString(),
-    endsAt: endsAt.toISOString(),
+    startsAt: startsAt.date.toISOString(),
+    endsAt: endsAt.date.toISOString(),
     recurrenceFrequency: "none",
+    timeZone,
   };
 }
 
@@ -88,14 +96,15 @@ const getDayDistance = (start: Date, end: Date) =>
 const getMonthAllDaySegments = (
   blocks: TimeBlock[],
   days: Date[],
+  timeZone: string,
 ): MonthAllDaySegment[] => {
   const rangeStart = startOfDay(days[0]);
   const rangeEnd = addCalendarDays(startOfDay(days[days.length - 1]), 1);
   const segments = blocks
     .filter(isAllDayBlock)
     .flatMap((block) => {
-      const blockStart = startOfDay(new Date(block.startsAt));
-      const blockEnd = getAllDayEndDate(block);
+      const blockStart = startOfDay(toZonedCalendarDate(block.startsAt, timeZone));
+      const blockEnd = getAllDayEndDate(block, timeZone);
       if (blockEnd <= rangeStart || blockStart >= rangeEnd) {
         return [];
       }
@@ -145,28 +154,43 @@ const getResizedAllDayBlock = (
   block: TimeBlock,
   edge: AllDayResizeEdge,
   day: Date,
+  timeZone: string,
 ) => {
-  const currentStart = startOfDay(new Date(block.startsAt));
-  const currentEnd = getAllDayEndDate(block);
+  const currentStart = startOfDay(toZonedCalendarDate(block.startsAt, timeZone));
+  const currentEnd = getAllDayEndDate(block, timeZone);
   const candidateStart = startOfDay(day);
 
   if (edge === "start") {
     const latestStart = addCalendarDays(currentEnd, -1);
+    const startResolution = resolveCalendarMinute(
+      new Date(Math.min(candidateStart.getTime(), latestStart.getTime())),
+      0,
+      timeZone,
+    );
     return {
       ...block,
-      startsAt: new Date(
-        Math.min(candidateStart.getTime(), latestStart.getTime()),
-      ).toISOString(),
+      timeZone,
+      startsAt:
+        startResolution.status === "valid"
+          ? startResolution.date.toISOString()
+          : block.startsAt,
     };
   }
 
   const candidateEnd = addCalendarDays(candidateStart, 1);
   const earliestEnd = addCalendarDays(currentStart, 1);
+  const endResolution = resolveCalendarMinute(
+    new Date(Math.max(candidateEnd.getTime(), earliestEnd.getTime())),
+    0,
+    timeZone,
+  );
   return {
     ...block,
-    endsAt: new Date(
-      Math.max(candidateEnd.getTime(), earliestEnd.getTime()),
-    ).toISOString(),
+    timeZone,
+    endsAt:
+      endResolution.status === "valid"
+        ? endResolution.date.toISOString()
+        : block.endsAt,
   };
 };
 
@@ -196,6 +220,7 @@ function MonthView({
   selectedTaskId,
   tasks,
   weekStartDay,
+  timeZone,
 }: MonthViewProps) {
   const monthGridRef = useRef<HTMLDivElement>(null);
   const [allDayResize, setAllDayResize] = useState<
@@ -215,11 +240,12 @@ function MonthView({
               allDayResize.block,
               allDayResize.edge,
               monthDays[allDayResize.dayIndex],
+              timeZone,
             )
           : block,
       )
     : blocks;
-  const allDaySegments = getMonthAllDaySegments(allDayPreviewBlocks, monthDays);
+  const allDaySegments = getMonthAllDaySegments(allDayPreviewBlocks, monthDays, timeZone);
   const weekLaneCounts = Array.from({ length: 6 }, (_, weekIndex) =>
     Math.max(
       0,
@@ -231,11 +257,11 @@ function MonthView({
   const weekdayLabels = getWeekDays(new Date(2026, 0, 5), weekStartDay).map(
     (day) => weekdayFormatter.format(day),
   );
-  const today = startOfDay(new Date());
+  const today = startOfDay(toZonedCalendarDate(new Date(), timeZone));
   const handleCreateBlockForDay = (day: Date) => {
     onSelectDate(day);
     onSelectBlock(undefined);
-    onCreateBlockSelection(getDraftTimeBlockForDay(day, defaultCategoryId));
+    onCreateBlockSelection(getDraftTimeBlockForDay(day, defaultCategoryId, timeZone));
   };
 
   const handleSelectEmptyDay = (day: Date) => {
@@ -285,6 +311,7 @@ function MonthView({
         allDayResize.block,
         allDayResize.edge,
         monthDays[allDayResize.dayIndex],
+        timeZone,
       );
       setAllDayResize(undefined);
       void onUpdateBlock(resizedBlock);
@@ -305,7 +332,7 @@ function MonthView({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [allDayResize, monthDays, onUpdateBlock]);
+  }, [allDayResize, monthDays, onUpdateBlock, timeZone]);
 
   const handleAllDayResizeStart = (
     block: TimeBlock,
@@ -340,10 +367,10 @@ function MonthView({
 
       <div className="month-grid" ref={monthGridRef}>
         {monthDays.map((day, dayIndex) => {
-          const allDayCount = getBlocksForDay(allDayPreviewBlocks, day).filter(
+          const allDayCount = getBlocksForDay(allDayPreviewBlocks, day, timeZone).filter(
             isAllDayBlock,
           ).length;
-          const dayBlocks = getBlocksForDay(blocks, day).filter(
+          const dayBlocks = getBlocksForDay(blocks, day, timeZone).filter(
             (block) => !isAllDayBlock(block),
           ).sort(
             (first, second) =>
@@ -419,12 +446,12 @@ function MonthView({
                       title={
                         isAllDayBlock(block)
                           ? `All day ${block.title}`
-                          : `${formatTime(block.startsAt)} ${block.title}`
+                          : `${formatTime(block.startsAt, timeZone)} ${block.title}`
                       }
                       type="button"
                     >
                       <small>
-                        {isAllDayBlock(block) ? "All day" : formatTime(block.startsAt)}
+                        {isAllDayBlock(block) ? "All day" : formatTime(block.startsAt, timeZone)}
                       </small>
                       <span>
                         {block.kind === "habit" ? "Habit: " : ""}
@@ -472,11 +499,11 @@ function MonthView({
           const category = findCategoryById(categories, segment.block.categoryId);
           const colors = getCategoryColorValues(category?.color);
           const segmentStartsAtBlockStart = isSameCalendarDay(
-            new Date(segment.block.startsAt),
+            toZonedCalendarDate(segment.block.startsAt, timeZone),
             monthDays[segment.startIndex],
           );
           const segmentEndsAtBlockEnd = isSameCalendarDay(
-            addCalendarDays(getAllDayEndDate(segment.block), -1),
+            addCalendarDays(getAllDayEndDate(segment.block, timeZone), -1),
             monthDays[segment.endIndex],
           );
 

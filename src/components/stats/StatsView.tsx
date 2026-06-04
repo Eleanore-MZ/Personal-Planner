@@ -50,6 +50,7 @@ type StatsViewProps = {
   tasks: Task[];
   timeBlocks: TimeBlock[];
   weekStartDay: WeekStartDay;
+  timeZone: string;
   onSelectStatsDate: (date: Date) => void;
 };
 
@@ -95,6 +96,7 @@ function StatsView({
   tasks,
   timeBlocks,
   weekStartDay,
+  timeZone,
   onSelectStatsDate,
 }: StatsViewProps) {
   const periodDate = useMemo(
@@ -105,9 +107,12 @@ function StatsView({
     () => getStatsRange(filters.range, periodDate, weekStartDay),
     [filters.range, periodDate, weekStartDay],
   );
+  const isWeekRange = filters.range === "week";
+  const isMonthRange = filters.range === "month";
+  const isYearRange = filters.range === "year";
   const periodRecordedDayCount = useMemo(
-    () => getRecordedTimeBlockDayCount(timeBlocks, range.start, range.end),
-    [range.end, range.start, timeBlocks],
+    () => getRecordedTimeBlockDayCount(timeBlocks, range.start, range.end, timeZone),
+    [range.end, range.start, timeBlocks, timeZone],
   );
   const filteredTasks = useMemo(
     () => {
@@ -215,8 +220,8 @@ function StatsView({
     ],
   );
   const periodBlocks = useMemo(
-    () => getTimeBlocksInRange(filteredBlocks, range.start, range.end),
-    [filteredBlocks, range.end, range.start],
+    () => getTimeBlocksInRange(filteredBlocks, range.start, range.end, timeZone),
+    [filteredBlocks, range.end, range.start, timeZone],
   );
   const trackedActiveBlocks = useMemo(
     () =>
@@ -273,38 +278,59 @@ function StatsView({
   );
   const weekCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
-    [categories, trackedActiveBlocks],
+      isWeekRange
+        ? calculateCategoryHours(trackedActiveBlocks, categories, "active")
+        : [],
+    [categories, isWeekRange, trackedActiveBlocks],
   );
   const weekTimeGroups = useMemo(
-    () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
-    [categories, statsGroups, trackedActiveBlocks],
+    () =>
+      isWeekRange
+        ? calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups)
+        : [],
+    [categories, isWeekRange, statsGroups, trackedActiveBlocks],
   );
   const monthCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
-    [categories, trackedActiveBlocks],
+      isMonthRange
+        ? calculateCategoryHours(trackedActiveBlocks, categories, "active")
+        : [],
+    [categories, isMonthRange, trackedActiveBlocks],
   );
   const monthTimeGroups = useMemo(
-    () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
-    [categories, statsGroups, trackedActiveBlocks],
+    () =>
+      isMonthRange
+        ? calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups)
+        : [],
+    [categories, isMonthRange, statsGroups, trackedActiveBlocks],
   );
   const yearCategoryHours = useMemo(
     () =>
-      calculateCategoryHours(trackedActiveBlocks, categories, "active"),
-    [categories, trackedActiveBlocks],
+      isYearRange
+        ? calculateCategoryHours(trackedActiveBlocks, categories, "active")
+        : [],
+    [categories, isYearRange, trackedActiveBlocks],
   );
   const yearTimeGroups = useMemo(
-    () => calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups),
-    [categories, statsGroups, trackedActiveBlocks],
+    () =>
+      isYearRange
+        ? calculateTimeGroupHours(trackedActiveBlocks, categories, statsGroups)
+        : [],
+    [categories, isYearRange, statsGroups, trackedActiveBlocks],
   );
   const yearProductiveGroups = useMemo(
-    () => calculateTimeGroupHours(productiveActiveBlocks, categories, statsGroups),
-    [categories, productiveActiveBlocks, statsGroups],
+    () =>
+      isYearRange
+        ? calculateTimeGroupHours(productiveActiveBlocks, categories, statsGroups)
+        : [],
+    [categories, isYearRange, productiveActiveBlocks, statsGroups],
   );
   const weekHourOfDayData = useMemo(
-    () => calculateHourOfDayActivity(productiveChartBlocks, range.start, range.end),
-    [productiveChartBlocks, range.end, range.start],
+    () =>
+      isWeekRange
+        ? calculateHourOfDayActivity(productiveChartBlocks, range.start, range.end, timeZone)
+        : [],
+    [isWeekRange, productiveChartBlocks, range.end, range.start, timeZone],
   );
   const weekTimeOfDaySummary = useMemo(
     () => calculateTimeOfDaySummary(weekHourOfDayData),
@@ -312,54 +338,66 @@ function StatsView({
   );
   const weekRhythm = useMemo(
     () =>
-      calculateWeekRhythm(
-        trackedActiveBlocks,
-        range.start,
-        categories,
-        statsGroups,
-      ),
-    [categories, range.start, statsGroups, trackedActiveBlocks],
+      isWeekRange
+        ? calculateWeekRhythm(
+            trackedActiveBlocks,
+            range.start,
+            categories,
+            statsGroups,
+            timeZone,
+          )
+        : [],
+    [categories, isWeekRange, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const yearMonthlyTrackedGroupHours = useMemo(
     () =>
-      calculateMonthlyStatsGroupHours(
-        trackedActiveBlocks,
-        range.start.getFullYear(),
-        categories,
-        statsGroups,
-        "active",
-      ),
-    [categories, range.start, statsGroups, trackedActiveBlocks],
+      isYearRange
+        ? calculateMonthlyStatsGroupHours(
+            trackedActiveBlocks,
+            range.start.getFullYear(),
+            categories,
+            statsGroups,
+            "active",
+            timeZone,
+          )
+        : [],
+    [categories, isYearRange, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const weekDailyProductiveHoursData = useMemo(
     () =>
-      calculateDailyStatsGroupHours(
-        trackedActiveBlocks,
-        range.start,
-        range.end,
-        categories,
-        statsGroups,
-        "active",
-      ).map((day) => ({
-        ...day,
-        label: weekdayChartFormatter.format(new Date(day.date)),
-      })),
-    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+      isWeekRange
+        ? calculateDailyStatsGroupHours(
+            trackedActiveBlocks,
+            range.start,
+            range.end,
+            categories,
+            statsGroups,
+            "active",
+            timeZone,
+          ).map((day) => ({
+            ...day,
+            label: weekdayChartFormatter.format(new Date(day.date)),
+          }))
+        : [],
+    [categories, isWeekRange, range.end, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const monthWeeklyProductiveHoursData = useMemo(
     () =>
-      calculateWeeklyStatsGroupHours(
-        trackedActiveBlocks,
-        range.start,
-        range.end,
-        categories,
-        statsGroups,
-        "active",
-      ),
-    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+      isMonthRange
+        ? calculateWeeklyStatsGroupHours(
+            trackedActiveBlocks,
+            range.start,
+            range.end,
+            categories,
+            statsGroups,
+            "active",
+            timeZone,
+          )
+        : [],
+    [categories, isMonthRange, range.end, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const monthActivityDays = useMemo<MonthActivityDay[]>(() => {
-    if (filters.range !== "month") {
+    if (!isMonthRange) {
       return [];
     }
 
@@ -368,12 +406,14 @@ function StatsView({
       range.start,
       range.end,
       "active",
+      timeZone,
     );
     const trackedDays = calculateDailyPlannedHours(
       trackedActiveBlocks,
       range.start,
       range.end,
       "active",
+      timeZone,
     );
     return productiveDays.map((day, index) => ({
       date: day.date,
@@ -382,15 +422,19 @@ function StatsView({
       trackedHours: trackedDays[index]?.hours ?? 0,
     }));
   }, [
-    filters.range,
+    isMonthRange,
     productiveActiveBlocks,
     range.end,
     range.start,
     trackedActiveBlocks,
+    timeZone,
   ]);
   const monthHourOfDayData = useMemo(
-    () => calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end),
-    [productiveActiveBlocks, range.end, range.start],
+    () =>
+      isMonthRange
+        ? calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end, timeZone)
+        : [],
+    [isMonthRange, productiveActiveBlocks, range.end, range.start, timeZone],
   );
   const monthTimeOfDaySummary = useMemo(
     () => calculateTimeOfDaySummary(monthHourOfDayData),
@@ -398,58 +442,73 @@ function StatsView({
   );
   const monthSleepByDayData = useMemo(
     () =>
-      calculateDailySleepHours(
-        trackedActiveBlocks,
-        categories,
-        statsGroups,
-        range.start,
-        range.end,
-    ),
-    [categories, range.end, range.start, statsGroups, trackedActiveBlocks],
+      isMonthRange
+        ? calculateDailySleepHours(
+            trackedActiveBlocks,
+            categories,
+            statsGroups,
+            range.start,
+            range.end,
+            timeZone,
+          )
+        : [],
+    [categories, isMonthRange, range.end, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const monthPressureData = useMemo(
     () =>
-      calculatePressureLevel(
-        pressureTasks,
-        pressureBlocks,
-        categories,
-        range.start,
-        range.end,
-      ),
-    [categories, pressureBlocks, pressureTasks, range.end, range.start],
+      isMonthRange
+        ? calculatePressureLevel(
+            pressureTasks,
+            pressureBlocks,
+            categories,
+            range.start,
+            range.end,
+            3,
+            timeZone,
+          )
+        : [],
+    [categories, isMonthRange, pressureBlocks, pressureTasks, range.end, range.start, timeZone],
   );
   const yearSleepByMonthData = useMemo(
     () =>
-      Array.from({ length: 12 }, (_, month) => {
-        const monthStart = new Date(range.start.getFullYear(), month, 1);
-        const monthEnd = new Date(range.start.getFullYear(), month + 1, 1);
-        const monthRecordedDayCount = getRecordedTimeBlockDayCount(
-          timeBlocks,
-          monthStart,
-          monthEnd,
-        );
-        const monthlySleep = calculateSleepStats(
-          trackedActiveBlocks,
-          categories,
-          statsGroups,
-          monthStart,
-          monthEnd,
-          "period-days",
-          monthRecordedDayCount,
-        );
+      isYearRange
+        ? Array.from({ length: 12 }, (_, month) => {
+            const monthStart = new Date(range.start.getFullYear(), month, 1);
+            const monthEnd = new Date(range.start.getFullYear(), month + 1, 1);
+            const monthRecordedDayCount = getRecordedTimeBlockDayCount(
+              timeBlocks,
+              monthStart,
+              monthEnd,
+              timeZone,
+            );
+            const monthlySleep = calculateSleepStats(
+              trackedActiveBlocks,
+              categories,
+              statsGroups,
+              monthStart,
+              monthEnd,
+              "period-days",
+              monthRecordedDayCount,
+              undefined,
+              timeZone,
+            );
 
-        return {
-          date: monthStart.toISOString(),
-          label: monthStart.toLocaleString("en-US", { month: "short" }),
-          hours:
-            monthlySleep.totalHours > 0 ? monthlySleep.averageHoursPerDay : 0,
-        };
-      }),
-    [categories, range.start, statsGroups, timeBlocks, trackedActiveBlocks],
+            return {
+              date: monthStart.toISOString(),
+              label: monthStart.toLocaleString("en-US", { month: "short" }),
+              hours:
+                monthlySleep.totalHours > 0 ? monthlySleep.averageHoursPerDay : 0,
+            };
+          })
+        : [],
+    [categories, isYearRange, range.start, statsGroups, timeBlocks, timeZone, trackedActiveBlocks],
   );
   const yearHourOfDayData = useMemo(
-    () => calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end),
-    [productiveActiveBlocks, range.end, range.start],
+    () =>
+      isYearRange
+        ? calculateHourOfDayActivity(productiveActiveBlocks, range.start, range.end, timeZone)
+        : [],
+    [isYearRange, productiveActiveBlocks, range.end, range.start, timeZone],
   );
   const yearTimeOfDaySummary = useMemo(
     () => calculateTimeOfDaySummary(yearHourOfDayData),
@@ -466,6 +525,7 @@ function StatsView({
         filters.timeMode,
         undefined,
         periodRecordedDayCount,
+        timeZone,
       ),
     [
       categories,
@@ -475,6 +535,7 @@ function StatsView({
       range.end,
       range.start,
       summaryTasks,
+      timeZone,
     ],
   );
   const trackedSummary = useMemo(
@@ -488,6 +549,7 @@ function StatsView({
         filters.timeMode,
         undefined,
         periodRecordedDayCount,
+        timeZone,
       ),
     [
       categories,
@@ -497,6 +559,7 @@ function StatsView({
       range.start,
       summaryTasks,
       trackedActiveBlocks,
+      timeZone,
     ],
   );
   const sleepStats = useMemo(
@@ -509,6 +572,8 @@ function StatsView({
         range.end,
         filters.range === "week" ? "logged-days" : "period-days",
         periodRecordedDayCount,
+        undefined,
+        timeZone,
       ),
     [
       categories,
@@ -518,27 +583,34 @@ function StatsView({
       range.start,
       statsGroups,
       trackedActiveBlocks,
+      timeZone,
     ],
   );
   const heatmapData = useMemo(
     () =>
-      buildYearHeatmapData(
-        filteredBlocks,
-        categories,
-        statsGroups,
-        range.start.getFullYear(),
-      ),
-    [categories, filteredBlocks, range.start, statsGroups],
+      isYearRange
+        ? buildYearHeatmapData(
+            filteredBlocks,
+            categories,
+            statsGroups,
+            range.start.getFullYear(),
+            timeZone,
+          )
+        : [],
+    [categories, filteredBlocks, isYearRange, range.start, statsGroups, timeZone],
   );
   const yearPressureData = useMemo(
     () =>
-      calculateYearPressureLevel(
-        pressureTasks,
-        pressureBlocks,
-        categories,
-        range.start.getFullYear(),
-      ),
-    [categories, pressureBlocks, pressureTasks, range.start],
+      isYearRange
+        ? calculateYearPressureLevel(
+            pressureTasks,
+            pressureBlocks,
+            categories,
+            range.start.getFullYear(),
+            timeZone,
+          )
+        : [],
+    [categories, isYearRange, pressureBlocks, pressureTasks, range.start, timeZone],
   );
   const [previewStatsDate, setPreviewStatsDate] = useState<Date | undefined>();
   const selectedHeatmapDay = useMemo(
@@ -565,8 +637,11 @@ function StatsView({
       : "";
   const sleepDaysDetail = `${sleepStats.daysLogged} days logged - avg over ${sleepStats.averageDayCount} recorded days`;
   const yearCoverageWindow = useMemo(
-    () => getYearStatsCoverageWindow(timeBlocks, range.start.getFullYear()),
-    [range.start, timeBlocks],
+    () =>
+      isYearRange
+        ? getYearStatsCoverageWindow(timeBlocks, range.start.getFullYear(), new Date(), timeZone)
+        : null,
+    [isYearRange, range.start, timeBlocks, timeZone],
   );
   const yearAverageDayCount = yearCoverageWindow?.dayCount ?? 0;
   const yearCoverageWeeksDetail = yearCoverageWindow
@@ -574,12 +649,15 @@ function StatsView({
     : "No recorded weeks yet";
   const yearMonthlyProductiveHours = useMemo(
     () =>
-      calculateMonthlyPlannedHours(
-        productiveActiveBlocks,
-        range.start.getFullYear(),
-        "active",
-      ),
-    [productiveActiveBlocks, range.start],
+      isYearRange
+        ? calculateMonthlyPlannedHours(
+            productiveActiveBlocks,
+            range.start.getFullYear(),
+            "active",
+            timeZone,
+          )
+        : [],
+    [isYearRange, productiveActiveBlocks, range.start, timeZone],
   );
   const mostProductiveMonth = useMemo(
     () =>
@@ -591,16 +669,19 @@ function StatsView({
   );
   const yearDailyProductiveHours = useMemo(
     () =>
-      calculateDailyPlannedHours(
-        productiveActiveBlocks,
-        range.start,
-        range.end,
-        "active",
-      ).map((day) => ({
-        ...day,
-        label: summaryDayFormatter.format(new Date(day.date)),
-      })),
-    [productiveActiveBlocks, range.end, range.start],
+      isYearRange
+        ? calculateDailyPlannedHours(
+            productiveActiveBlocks,
+            range.start,
+            range.end,
+            "active",
+            timeZone,
+          ).map((day) => ({
+            ...day,
+            label: summaryDayFormatter.format(new Date(day.date)),
+          }))
+        : [],
+    [isYearRange, productiveActiveBlocks, range.end, range.start, timeZone],
   );
   const yearProductiveDays = useMemo(
     () => yearDailyProductiveHours.filter((day) => day.hours > 0).length,
@@ -608,13 +689,16 @@ function StatsView({
   );
   const yearDailyTrackedHours = useMemo(
     () =>
-      calculateDailyPlannedHours(
-        trackedActiveBlocks,
-        range.start,
-        range.end,
-        "active",
-      ),
-    [range.end, range.start, trackedActiveBlocks],
+      isYearRange
+        ? calculateDailyPlannedHours(
+            trackedActiveBlocks,
+            range.start,
+            range.end,
+            "active",
+            timeZone,
+          )
+        : [],
+    [isYearRange, range.end, range.start, timeZone, trackedActiveBlocks],
   );
   const yearTrackedDays = useMemo(
     () => yearDailyTrackedHours.filter((day) => day.hours > 0).length,
@@ -658,9 +742,11 @@ function StatsView({
             addCalendarDays(yearCoverageWindow.end, 1),
             "period-days",
             yearCoverageWindow.dayCount,
+            undefined,
+            timeZone,
           )
         : null,
-    [categories, statsGroups, trackedActiveBlocks, yearCoverageWindow],
+    [categories, statsGroups, timeZone, trackedActiveBlocks, yearCoverageWindow],
   );
   const monthCompletionRate =
     summary.dueTasks > 0
@@ -1019,6 +1105,7 @@ function StatsView({
           onPreviewDate={setPreviewStatsDate}
           onSelectDate={onSelectStatsDate}
           selectedDate={selectedStatsDate}
+          timeZone={timeZone}
           year={range.start.getFullYear()}
         >
           <SelectedDayStats

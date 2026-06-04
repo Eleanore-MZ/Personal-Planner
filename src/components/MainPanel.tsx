@@ -21,6 +21,7 @@ import TasksView from "./tasks/TasksView";
 import TimerView from "./timer/TimerView";
 import WeekView from "./calendar/WeekView";
 import { useState } from "react";
+import { resolveCalendarMinute } from "../utils/timezone";
 
 type MainPanelProps = {
   activeItem: NavItemId;
@@ -120,21 +121,31 @@ function MainPanel({
         source: draftBlock.source ?? "manual",
       });
     } else {
-      const startsAt = new Date(currentDate);
-      startsAt.setHours(9, 0, 0, 0);
-      const endsAt = new Date(startsAt);
-      endsAt.setHours(10, 0, 0, 0);
+      const startsAt = resolveCalendarMinute(
+        currentDate,
+        9 * 60,
+        settings.primaryCalendarTimeZone,
+      );
+      const endsAt = resolveCalendarMinute(
+        currentDate,
+        10 * 60,
+        settings.primaryCalendarTimeZone,
+      );
+      if (startsAt.status !== "valid" || endsAt.status !== "valid") {
+        return;
+      }
 
       setDraftTimeBlock({
         title: "",
         notes: "",
         categoryId: selectedCalendarCategoryId ?? categories[0]?.id ?? "",
-        startsAt: startsAt.toISOString(),
-        endsAt: endsAt.toISOString(),
+        startsAt: startsAt.date.toISOString(),
+        endsAt: endsAt.date.toISOString(),
         kind: getDefaultBlockKind(selectedCalendarCategoryId ?? categories[0]?.id ?? ""),
         outcome: "active",
         source: "manual",
         recurrenceFrequency: "none",
+        timeZone: settings.primaryCalendarTimeZone,
       });
     }
     setIsTimeBlockDialogOpen(true);
@@ -174,6 +185,7 @@ function MainPanel({
           tasks={tasks}
           timeBlocks={timeBlocks}
           weekStartDay={settings.weekStartDay}
+          timeZone={settings.primaryCalendarTimeZone}
         />
       ) : activeItem === "settings" ? (
         <SettingsView
@@ -251,6 +263,8 @@ function MainPanel({
               visibleEndHour={settings.visibleEndHour}
               visibleStartHour={settings.visibleStartHour}
               weekStartDay={settings.weekStartDay}
+              timeZone={settings.primaryCalendarTimeZone}
+              timeZones={settings.calendarTimeZones}
               onToggleTask={onToggleTask}
               onUpdateBlock={onUpdateTimeBlock}
             />
@@ -271,6 +285,7 @@ function MainPanel({
               selectedTaskId={selectedTaskId}
               tasks={tasks}
               weekStartDay={settings.weekStartDay}
+              timeZone={settings.primaryCalendarTimeZone}
             />
           ) : null}
         </>
@@ -291,6 +306,8 @@ function MainPanel({
           onClose={closeTimeBlockDialog}
           onSave={onCreateTimeBlock}
           tasks={tasks}
+          primaryTimeZone={settings.primaryCalendarTimeZone}
+          timeZones={settings.calendarTimeZones}
         />
       ) : null}
     </section>

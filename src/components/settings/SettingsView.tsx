@@ -1,4 +1,5 @@
 import type { AppSettings, WeekStartDay } from "../../types/app";
+import TimeZoneManager from "../TimeZoneManager";
 
 type SettingsViewProps = {
   settings: AppSettings;
@@ -62,6 +63,27 @@ function SettingsView({ settings, onUpdateSettings }: SettingsViewProps) {
             />
           </label>
         </div>
+      </section>
+
+      <section className="settings-panel">
+        <div>
+          <div className="panel-kicker">Calendar</div>
+          <h2>Timezones</h2>
+          <p>
+            The primary timezone controls scheduling and Stats day boundaries.
+          </p>
+        </div>
+        <TimeZoneManager
+          onChange={(calendarTimeZones, primaryCalendarTimeZone) =>
+            onUpdateSettings({
+              ...settings,
+              calendarTimeZones,
+              primaryCalendarTimeZone,
+            })
+          }
+          primaryTimeZone={settings.primaryCalendarTimeZone}
+          timeZones={settings.calendarTimeZones}
+        />
       </section>
 
       <section className="settings-panel">

@@ -1,4 +1,10 @@
 import type { TimeBlock } from "../types/domain";
+import { DateTime } from "luxon";
+import {
+  getZonedDayBoundary,
+  systemTimeZone,
+  toZonedCalendarDate,
+} from "./timezone";
 
 export const calendarStartHour = 6;
 export const calendarEndHour = 22;
@@ -172,13 +178,39 @@ export function isAllDayBlock(block: TimeBlock) {
   return Boolean(block.isAllDay);
 }
 
-export function getAllDayEndDate(block: TimeBlock) {
+export function getAllDayEndDate(block: TimeBlock, timeZone?: string) {
+  if (timeZone) {
+    const lastVisibleInstant = new Date(
+      Math.max(
+        new Date(block.endsAt).getTime() - 1,
+        new Date(block.startsAt).getTime(),
+      ),
+    );
+    const lastVisibleDay = startOfDay(
+      toZonedCalendarDate(lastVisibleInstant, timeZone),
+    );
+    return addCalendarDays(lastVisibleDay, 1);
+  }
+
   const startsAt = startOfDay(new Date(block.startsAt));
   const endsAt = startOfDay(new Date(block.endsAt));
   return endsAt <= startsAt ? addCalendarDays(startsAt, 1) : endsAt;
 }
 
-export function doesBlockOverlapDay(block: TimeBlock, date: Date) {
+export function doesBlockOverlapDay(
+  block: TimeBlock,
+  date: Date,
+  timeZone?: string,
+) {
+  if (timeZone) {
+    const dayStart = getZonedDayBoundary(date, timeZone);
+    const nextDay = getZonedDayBoundary(addCalendarDays(date, 1), timeZone);
+    return (
+      new Date(block.endsAt).getTime() > dayStart.getTime() &&
+      new Date(block.startsAt).getTime() < nextDay.getTime()
+    );
+  }
+
   const dayStart = startOfDay(date);
   const nextDay = addCalendarDays(dayStart, 1);
   const startsAt = isAllDayBlock(block)
@@ -190,13 +222,21 @@ export function doesBlockOverlapDay(block: TimeBlock, date: Date) {
   return endsAt > dayStart && startsAt < nextDay;
 }
 
-export function getBlocksForDay(blocks: TimeBlock[], date: Date) {
-  const dayStart = startOfDay(date);
-  const nextDay = addCalendarDays(dayStart, 1);
+export function getBlocksForDay(
+  blocks: TimeBlock[],
+  date: Date,
+  timeZone?: string,
+) {
+  const dayStart = timeZone
+    ? getZonedDayBoundary(date, timeZone)
+    : startOfDay(date);
+  const nextDay = timeZone
+    ? getZonedDayBoundary(addCalendarDays(date, 1), timeZone)
+    : addCalendarDays(dayStart, 1);
 
   return blocks.flatMap((block) => {
     if (isAllDayBlock(block)) {
-      return doesBlockOverlapDay(block, date) ? [block] : [];
+      return doesBlockOverlapDay(block, date, timeZone) ? [block] : [];
     }
 
     const startsAt = new Date(block.startsAt);
@@ -223,7 +263,7 @@ export function getTimeBlockSeriesId(block: TimeBlock) {
   return block.recurringTimeBlockId ?? block.id;
 }
 
-export function formatRecurrenceLabel(block: TimeBlock) {
+export function formatRecurrenceLabel(block: TimeBlock, timeZone?: string) {
   const frequency = block.recurrenceFrequency ?? "none";
   if (frequency === "none") {
     return "Does not repeat";
@@ -256,9 +296,12 @@ export function formatRecurrenceLabel(block: TimeBlock) {
     return label;
   }
 
-  return `${label} until ${dateTitleFormatter.format(
-    new Date(block.recurrenceEndDate),
-  )}`;
+  return `${label} until ${new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  }).format(new Date(block.recurrenceEndDate))}`;
 }
 
 function getOccurrenceBlock(
@@ -280,23 +323,6 @@ function getOccurrenceBlock(
   };
 }
 
-function copyTimeToDate(source: Date, target: Date) {
-  const nextDate = new Date(target);
-  nextDate.setHours(
-    source.getHours(),
-    source.getMinutes(),
-    source.getSeconds(),
-    source.getMilliseconds(),
-  );
-  return nextDate;
-}
-
-function getWeekIndexFromStart(startDate: Date, candidateDate: Date) {
-  const startWeek = startOfWeek(startDate, "sunday").getTime();
-  const candidateWeek = startOfWeek(candidateDate, "sunday").getTime();
-  return Math.floor((candidateWeek - startWeek) / (7 * 24 * 60 * 60 * 1000));
-}
-
 export function expandRecurringTimeBlocks(
   blocks: TimeBlock[],
   rangeStart: Date,
@@ -313,7 +339,9 @@ export function expandRecurringTimeBlocks(
       return blockEnd >= startTime && blockStart <= endTime ? [block] : [];
     }
 
+    const anchorTimeZone = block.timeZone ?? systemTimeZone;
     const startsAt = new Date(block.startsAt);
+    const zonedStartsAt = DateTime.fromJSDate(startsAt).setZone(anchorTimeZone);
     const endsAt = new Date(block.endsAt);
     const durationMs = endsAt.getTime() - startsAt.getTime();
     const interval = Math.max(1, block.recurrenceInterval ?? 1);
@@ -359,40 +387,49 @@ export function expandRecurringTimeBlocks(
       const weekdays =
         block.recurrenceWeekdays && block.recurrenceWeekdays.length > 0
           ? [...new Set(block.recurrenceWeekdays)].sort()
-          : [startsAt.getDay()];
-      let candidateDate = startOfDay(startsAt);
+          : [zonedStartsAt.weekday % 7];
+      let candidateDate = zonedStartsAt.startOf("day");
       let guard = 0;
 
-      while (candidateDate <= lastOccurrenceStart && guard < 4000) {
-        const weekIndex = getWeekIndexFromStart(startsAt, candidateDate);
+      while (candidateDate.toMillis() <= lastOccurrenceStart.getTime() && guard < 4000) {
+        const weekIndex = Math.floor(
+          candidateDate.startOf("week").diff(zonedStartsAt.startOf("week"), "weeks").weeks,
+        );
         if (
-          candidateDate >= startOfDay(startsAt) &&
+          candidateDate.toMillis() >= zonedStartsAt.startOf("day").toMillis() &&
           weekIndex >= 0 &&
           weekIndex % interval === 0 &&
-          weekdays.includes(candidateDate.getDay())
+          weekdays.includes(candidateDate.weekday % 7)
         ) {
-          const occurrenceStart = copyTimeToDate(startsAt, candidateDate);
+          const occurrenceStart = candidateDate
+            .set({
+              hour: zonedStartsAt.hour,
+              minute: zonedStartsAt.minute,
+              second: zonedStartsAt.second,
+              millisecond: zonedStartsAt.millisecond,
+            })
+            .toJSDate();
           if (!maybePushOccurrence(occurrenceStart)) {
             break;
           }
         }
 
-        candidateDate = addCalendarDays(candidateDate, 1);
+        candidateDate = candidateDate.plus({ days: 1 });
         guard += 1;
       }
     } else {
-      let occurrenceStart = new Date(startsAt);
+      let occurrenceStart = zonedStartsAt;
       let guard = 0;
 
-      while (occurrenceStart <= lastOccurrenceStart && guard < 2000) {
-        if (!maybePushOccurrence(occurrenceStart)) {
+      while (occurrenceStart.toMillis() <= lastOccurrenceStart.getTime() && guard < 2000) {
+        if (!maybePushOccurrence(occurrenceStart.toJSDate())) {
           break;
         }
 
         if (frequency === "daily") {
-          occurrenceStart = addCalendarDays(occurrenceStart, interval);
+          occurrenceStart = occurrenceStart.plus({ days: interval });
         } else {
-          occurrenceStart = addCalendarMonths(occurrenceStart, interval);
+          occurrenceStart = occurrenceStart.plus({ months: interval });
         }
         guard += 1;
       }
@@ -405,9 +442,14 @@ export function expandRecurringTimeBlocks(
 export function getBlockPosition(
   block: TimeBlock,
   startHour = calendarStartHour,
+  timeZone?: string,
 ) {
-  const startsAt = new Date(block.startsAt);
-  const endsAt = new Date(block.endsAt);
+  const startsAt = timeZone
+    ? toZonedCalendarDate(block.startsAt, timeZone)
+    : new Date(block.startsAt);
+  const endsAt = timeZone
+    ? toZonedCalendarDate(block.endsAt, timeZone)
+    : new Date(block.endsAt);
   const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
   const endMinutes =
     endsAt.getHours() * 60 +

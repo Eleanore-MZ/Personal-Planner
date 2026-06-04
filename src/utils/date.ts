@@ -1,37 +1,53 @@
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
+const dateFormatOptions: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "numeric",
   year: "numeric",
-});
+};
 
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
+const timeFormatOptions: Intl.DateTimeFormatOptions = {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-});
+};
 
-const dayFormatter = new Intl.DateTimeFormat("en-US", {
+const dayFormatOptions: Intl.DateTimeFormatOptions = {
   weekday: "short",
   month: "short",
   day: "numeric",
-});
+};
 
-export function formatDate(date: string | Date) {
-  return dateFormatter.format(new Date(date));
+export function formatDate(date: string | Date, timeZone?: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    ...dateFormatOptions,
+    timeZone,
+  }).format(new Date(date));
 }
 
-export function formatTime(date: string | Date) {
-  return timeFormatter.format(new Date(date));
+export function formatTime(date: string | Date, timeZone?: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    ...timeFormatOptions,
+    timeZone,
+  }).format(new Date(date));
 }
 
-export function formatDateTimeRange(startsAt: string, endsAt: string) {
+export function formatDateTimeRange(
+  startsAt: string,
+  endsAt: string,
+  timeZone?: string,
+) {
   const startDate = new Date(startsAt);
   const endDate = new Date(endsAt);
-  if (startDate.toDateString() === endDate.toDateString()) {
-    return `${dayFormatter.format(startDate)}, ${formatTime(startsAt)} - ${formatTime(endsAt)}`;
+  const dayFormatter = new Intl.DateTimeFormat("en-US", {
+    ...dayFormatOptions,
+    timeZone,
+  });
+  const startDay = dayFormatter.format(startDate);
+  const endDay = dayFormatter.format(endDate);
+  if (startDay === endDay) {
+    return `${startDay}, ${formatTime(startsAt, timeZone)} - ${formatTime(endsAt, timeZone)}`;
   }
 
-  return `${dayFormatter.format(startDate)}, ${formatTime(startsAt)} - ${dayFormatter.format(endDate)}, ${formatTime(endsAt)}`;
+  return `${startDay}, ${formatTime(startsAt, timeZone)} - ${endDay}, ${formatTime(endsAt, timeZone)}`;
 }
 
 export function addDays(date: Date, days: number) {

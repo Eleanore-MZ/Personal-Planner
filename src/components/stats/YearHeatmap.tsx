@@ -8,6 +8,7 @@ import {
 } from "../../utils/stats";
 import { formatDate } from "../../utils/date";
 import { isSameCalendarDay } from "../../utils/calendar";
+import { toZonedCalendarDate } from "../../utils/timezone";
 
 type YearHeatmapProps = {
   children?: ReactNode;
@@ -17,6 +18,7 @@ type YearHeatmapProps = {
   selectedDate?: Date;
   year: number;
   onSelectDate: (date: Date) => void;
+  timeZone: string;
 };
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
@@ -37,6 +39,7 @@ function YearHeatmap({
   selectedDate,
   year,
   onSelectDate,
+  timeZone,
 }: YearHeatmapProps) {
   const maxValue = Math.max(
     ...data.map((day) => getHeatmapValue(day, metric)),
@@ -46,7 +49,7 @@ function YearHeatmap({
     statsHeatmapMetrics.find((metricOption) => metricOption.id === metric)?.label ??
     "Activity";
   const firstDay = data[0] ? new Date(data[0].date) : new Date(year, 0, 1);
-  const today = new Date();
+  const today = toZonedCalendarDate(new Date(), timeZone);
   const leadingEmptyDays = firstDay.getDay();
   const cells = [
     ...Array.from({ length: leadingEmptyDays }, () => undefined),

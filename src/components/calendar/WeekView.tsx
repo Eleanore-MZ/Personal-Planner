@@ -12,6 +12,13 @@ import {
   isSameCalendarDay,
   startOfDay,
 } from "../../utils/calendar";
+import {
+  getTimeZoneLabel,
+  getTimeZoneOffsetMinutes,
+  resolveCalendarMinute,
+  toTimeInputValue,
+  toZonedCalendarDate,
+} from "../../utils/timezone";
 import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { WeekStartDay } from "../../types/app";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
@@ -63,14 +70,13 @@ const getDroppedDate = (
   day: Date,
   startMinuteOfDay: number,
   durationMinutes: number,
+  timeZone: string,
 ) => {
-  const startsAt = new Date(day);
-  startsAt.setHours(
-    Math.floor(startMinuteOfDay / 60),
-    startMinuteOfDay % 60,
-    0,
-    0,
-  );
+  const startResolution = resolveCalendarMinute(day, startMinuteOfDay, timeZone);
+  if (startResolution.status !== "valid") {
+    return undefined;
+  }
+  const startsAt = startResolution.date;
 
   return {
     startsAt,
@@ -109,19 +115,21 @@ const getMinuteFromClientY = (
   );
 };
 
-const getDateAtMinute = (day: Date, minuteOfDay: number) => {
-  const date = new Date(day);
-  date.setHours(Math.floor(minuteOfDay / 60), minuteOfDay % 60, 0, 0);
-  return date;
+const getDateAtMinute = (day: Date, minuteOfDay: number, timeZone: string) => {
+  const resolution = resolveCalendarMinute(day, minuteOfDay, timeZone);
+  return resolution.status === "valid" ? resolution.date : undefined;
 };
 
-const getDateAtWeekMinute = (weekStart: Date, absoluteMinute: number) => {
+const getDateAtWeekMinute = (
+  weekStart: Date,
+  absoluteMinute: number,
+  timeZone: string,
+) => {
   const dayOffset = Math.floor(absoluteMinute / (24 * 60));
   const minuteOfDay = absoluteMinute - dayOffset * 24 * 60;
   const date = new Date(weekStart);
   date.setDate(date.getDate() + dayOffset);
-  date.setHours(Math.floor(minuteOfDay / 60), minuteOfDay % 60, 0, 0);
-  return date;
+  return getDateAtMinute(date, minuteOfDay, timeZone);
 };
 
 const getDayDistance = (start: Date, end: Date) =>
@@ -130,13 +138,14 @@ const getDayDistance = (start: Date, end: Date) =>
 const getAllDaySegments = (
   allDayBlocks: TimeBlock[],
   days: Date[],
+  timeZone: string,
 ): AllDaySegment[] => {
   const rangeStart = startOfDay(days[0]);
   const rangeEnd = addCalendarDays(startOfDay(days[days.length - 1]), 1);
   const segments = allDayBlocks
     .flatMap((block) => {
-      const blockStart = startOfDay(new Date(block.startsAt));
-      const blockEnd = getAllDayEndDate(block);
+      const blockStart = startOfDay(toZonedCalendarDate(block.startsAt, timeZone));
+      const blockEnd = getAllDayEndDate(block, timeZone);
       if (blockEnd <= rangeStart || blockStart >= rangeEnd) {
         return [];
       }
@@ -170,28 +179,43 @@ const getResizedAllDayBlock = (
   block: TimeBlock,
   edge: AllDayResizeEdge,
   day: Date,
+  timeZone: string,
 ) => {
-  const currentStart = startOfDay(new Date(block.startsAt));
-  const currentEnd = getAllDayEndDate(block);
+  const currentStart = startOfDay(toZonedCalendarDate(block.startsAt, timeZone));
+  const currentEnd = getAllDayEndDate(block, timeZone);
   const candidateStart = startOfDay(day);
 
   if (edge === "start") {
     const latestStart = addCalendarDays(currentEnd, -1);
+    const startResolution = resolveCalendarMinute(
+      new Date(Math.min(candidateStart.getTime(), latestStart.getTime())),
+      0,
+      timeZone,
+    );
     return {
       ...block,
-      startsAt: new Date(
-        Math.min(candidateStart.getTime(), latestStart.getTime()),
-      ).toISOString(),
+      timeZone,
+      startsAt:
+        startResolution.status === "valid"
+          ? startResolution.date.toISOString()
+          : block.startsAt,
     };
   }
 
   const candidateEnd = addCalendarDays(candidateStart, 1);
   const earliestEnd = addCalendarDays(currentStart, 1);
+  const endResolution = resolveCalendarMinute(
+    new Date(Math.max(candidateEnd.getTime(), earliestEnd.getTime())),
+    0,
+    timeZone,
+  );
   return {
     ...block,
-    endsAt: new Date(
-      Math.max(candidateEnd.getTime(), earliestEnd.getTime()),
-    ).toISOString(),
+    timeZone,
+    endsAt:
+      endResolution.status === "valid"
+        ? endResolution.date.toISOString()
+        : block.endsAt,
   };
 };
 
@@ -200,16 +224,21 @@ const getResizedBlock = (
   edge: ResizeEdge,
   day: Date,
   minuteOfDay: number,
+  timeZone: string,
 ) => {
   const startsAt = new Date(block.startsAt);
   const endsAt = new Date(block.endsAt);
-  const candidate = getDateAtMinute(day, minuteOfDay);
+  const candidate = getDateAtMinute(day, minuteOfDay, timeZone);
+  if (!candidate) {
+    return undefined;
+  }
   const minimumDurationMs = dragSnapMinutes * 60000;
 
   if (edge === "start") {
     const latestStart = new Date(endsAt.getTime() - minimumDurationMs);
     return {
       ...block,
+      timeZone,
       startsAt: new Date(
         Math.min(candidate.getTime(), latestStart.getTime()),
       ).toISOString(),
@@ -219,6 +248,7 @@ const getResizedBlock = (
   const earliestEnd = new Date(startsAt.getTime() + minimumDurationMs);
   return {
     ...block,
+    timeZone,
     endsAt: new Date(
       Math.max(candidate.getTime(), earliestEnd.getTime()),
     ).toISOString(),
@@ -332,6 +362,8 @@ type WeekViewProps = {
   visibleEndHour: number;
   visibleStartHour: number;
   weekStartDay: WeekStartDay;
+  timeZone: string;
+  timeZones: string[];
   selectedBlockId?: string;
   selectedBlockIds: string[];
   selectedTaskId?: string;
@@ -352,6 +384,8 @@ function WeekView({
   visibleEndHour,
   visibleStartHour,
   weekStartDay,
+  timeZone,
+  timeZones,
   selectedBlockId,
   selectedBlockIds,
   selectedTaskId,
@@ -408,9 +442,14 @@ function WeekView({
       }
     | undefined
   >();
+  const [timeZoneWarning, setTimeZoneWarning] = useState<string>();
   const weekDays = getWeekDays(date, weekStartDay);
   const hours = getCalendarHours(visibleStartHour, visibleEndHour);
-  const today = new Date();
+  const today = toZonedCalendarDate(new Date(), timeZone);
+  const orderedTimeZones = [
+    ...timeZones.filter((currentTimeZone) => currentTimeZone !== timeZone),
+    timeZone,
+  ];
   const timedBlocks = blocks.filter((block) => !isAllDayBlock(block));
   const allDayPreviewBlocks = allDayResize
     ? blocks.map((block) =>
@@ -419,6 +458,7 @@ function WeekView({
               allDayResize.block,
               allDayResize.edge,
               weekDays[allDayResize.dayIndex],
+              timeZone,
             )
           : block,
       )
@@ -426,6 +466,7 @@ function WeekView({
   const allDaySegments = getAllDaySegments(
     allDayPreviewBlocks.filter(isAllDayBlock),
     weekDays,
+    timeZone,
   );
   const dueTasksByDay = weekDays.map((day) =>
     tasks
@@ -444,6 +485,10 @@ function WeekView({
     ...allDaySegments.map((segment) => segment.laneIndex + 1),
   );
   const allDayVisibleLaneCount = allDayLaneCount + (allDaySelection ? 1 : 0);
+  const showTimeZoneWarning = () =>
+    setTimeZoneWarning(
+      "That wall time is invalid or ambiguous because of a DST transition. Use Advanced Edit to choose an exact occurrence.",
+    );
   const getAllDayColumnIndexFromPoint = useCallback((clientX: number) => {
     const rowBounds = allDayRowRef.current?.getBoundingClientRect();
     if (!rowBounds || clientX < rowBounds.left || clientX > rowBounds.right) {
@@ -481,7 +526,8 @@ function WeekView({
                 currentResize.edge,
                 currentResize.day,
                 minuteOfDay,
-              ),
+                timeZone,
+              ) ?? currentResize.previewBlock,
             }
           : undefined,
       );
@@ -503,9 +549,14 @@ function WeekView({
         resizingBlock.edge,
         resizingBlock.day,
         minuteOfDay,
+        timeZone,
       );
       setResizingBlock(undefined);
-      void onUpdateBlock(resizedBlock);
+      if (resizedBlock) {
+        void onUpdateBlock(resizedBlock);
+      } else {
+        showTimeZoneWarning();
+      }
     };
 
     const handlePointerCancel = (event: globalThis.PointerEvent) => {
@@ -525,7 +576,7 @@ function WeekView({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [onUpdateBlock, resizingBlock, visibleEndHour, visibleStartHour]);
+  }, [onUpdateBlock, resizingBlock, timeZone, visibleEndHour, visibleStartHour]);
 
   useEffect(
     () => () => {
@@ -563,6 +614,7 @@ function WeekView({
         allDayResize.block,
         allDayResize.edge,
         weekDays[allDayResize.dayIndex],
+        timeZone,
       );
       setAllDayResize(undefined);
       void onUpdateBlock(resizedBlock);
@@ -583,7 +635,7 @@ function WeekView({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
     };
-  }, [allDayResize, getAllDayColumnIndexFromPoint, onUpdateBlock, weekDays]);
+  }, [allDayResize, getAllDayColumnIndexFromPoint, onUpdateBlock, timeZone, weekDays]);
 
   const handleDragStart = (blockId: string, pointerOffsetY: number) => {
     if (resizingBlock) {
@@ -644,17 +696,25 @@ function WeekView({
       visibleStartMinute,
       latestStartMinute,
     );
-    const { startsAt, endsAt } = getDroppedDate(
+    const droppedDate = getDroppedDate(
       day,
       droppedMinute,
       durationMinutes,
+      timeZone,
     );
+    if (!droppedDate) {
+      showTimeZoneWarning();
+      handleDragEnd();
+      return;
+    }
+    const { startsAt, endsAt } = droppedDate;
 
     try {
       await onUpdateBlock({
         ...block,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
+        timeZone,
       });
     } finally {
       handleDragEnd();
@@ -713,11 +773,17 @@ function WeekView({
         visibleEndMinute - defaultCreatedBlockMinutes,
       ),
     );
-    const { startsAt, endsAt } = getDroppedDate(
+    const droppedDate = getDroppedDate(
       day,
       startMinute,
       defaultCreatedBlockMinutes,
+      timeZone,
     );
+    if (!droppedDate) {
+      showTimeZoneWarning();
+      return;
+    }
+    const { startsAt, endsAt } = droppedDate;
 
     onSelectBlock(undefined);
     onCreateBlockSelection({
@@ -726,6 +792,7 @@ function WeekView({
       categoryId: defaultCategoryId,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
+      timeZone,
     });
   };
 
@@ -740,20 +807,23 @@ function WeekView({
       return;
     }
 
-    const startsAt = new Date(day);
-    startsAt.setHours(0, 0, 0, 0);
-    const endsAt = new Date(startsAt);
-    endsAt.setDate(endsAt.getDate() + 1);
+    const startsAt = resolveCalendarMinute(day, 0, timeZone);
+    const endsAt = resolveCalendarMinute(addCalendarDays(day, 1), 0, timeZone);
+    if (startsAt.status !== "valid" || endsAt.status !== "valid") {
+      showTimeZoneWarning();
+      return;
+    }
 
     onSelectBlock(undefined);
     onCreateBlockSelection({
       title: "",
       notes: "",
       categoryId: defaultCategoryId,
-      startsAt: startsAt.toISOString(),
-      endsAt: endsAt.toISOString(),
+      startsAt: startsAt.date.toISOString(),
+      endsAt: endsAt.date.toISOString(),
       isAllDay: true,
       recurrenceFrequency: "none",
+      timeZone,
     });
   };
 
@@ -777,21 +847,27 @@ function WeekView({
   const createAllDayDraft = (startDayIndex: number, endDayIndex: number) => {
     const rangeStart = Math.min(startDayIndex, endDayIndex);
     const rangeEnd = Math.max(startDayIndex, endDayIndex);
-    const startsAt = new Date(weekDays[rangeStart]);
-    startsAt.setHours(0, 0, 0, 0);
-    const endsAt = new Date(weekDays[rangeEnd]);
-    endsAt.setHours(0, 0, 0, 0);
-    endsAt.setDate(endsAt.getDate() + 1);
+    const startsAt = resolveCalendarMinute(weekDays[rangeStart], 0, timeZone);
+    const endsAt = resolveCalendarMinute(
+      addCalendarDays(weekDays[rangeEnd], 1),
+      0,
+      timeZone,
+    );
+    if (startsAt.status !== "valid" || endsAt.status !== "valid") {
+      showTimeZoneWarning();
+      return;
+    }
 
     onSelectBlock(undefined);
     onCreateBlockSelection({
       title: "",
       notes: "",
       categoryId: defaultCategoryId,
-      startsAt: startsAt.toISOString(),
-      endsAt: endsAt.toISOString(),
+      startsAt: startsAt.date.toISOString(),
+      endsAt: endsAt.date.toISOString(),
       isAllDay: true,
       recurrenceFrequency: "none",
+      timeZone,
     });
   };
 
@@ -976,7 +1052,16 @@ function WeekView({
 
     const durationMinutes =
       Math.max(dragSnapMinutes, selectedEndMinute - selectedStartMinute);
-    const startsAt = getDateAtWeekMinute(weekDays[0], selectedStartMinute);
+    const startsAt = getDateAtWeekMinute(
+      weekDays[0],
+      selectedStartMinute,
+      timeZone,
+    );
+    if (!startsAt) {
+      setSelection(undefined);
+      showTimeZoneWarning();
+      return;
+    }
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
 
     setSelection(undefined);
@@ -986,6 +1071,7 @@ function WeekView({
       categoryId: defaultCategoryId,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
+      timeZone,
     });
   };
 
@@ -1080,14 +1166,73 @@ function WeekView({
       daysToShift * horizontalDayScrollThreshold;
     onShiftDays(daysToShift);
   };
+  const getSecondaryHourLabel = (secondaryTimeZone: string, hour: number) => {
+    const resolution = resolveCalendarMinute(weekDays[0], hour * 60, timeZone);
+    return resolution.status === "valid"
+      ? toTimeInputValue(toZonedCalendarDate(resolution.date, secondaryTimeZone))
+      : "--:--";
+  };
+  const getSecondaryShiftNote = (secondaryTimeZone: string) => {
+    let previousRelativeOffset: number | undefined;
+    for (const day of weekDays) {
+      const resolution = resolveCalendarMinute(day, 12 * 60, timeZone);
+      if (resolution.status !== "valid") {
+        continue;
+      }
+      const relativeOffset =
+        getTimeZoneOffsetMinutes(resolution.date, secondaryTimeZone) -
+        getTimeZoneOffsetMinutes(resolution.date, timeZone);
+      if (
+        previousRelativeOffset !== undefined &&
+        previousRelativeOffset !== relativeOffset
+      ) {
+        return `DST shift ${formatDayLabel(day)}`;
+      }
+      previousRelativeOffset = relativeOffset;
+    }
+    return undefined;
+  };
 
   return (
     <div
       className="calendar-board week-board"
       onWheel={handleWheel}
-      style={{ "--calendar-hours": hours.length } as CSSProperties}
+      style={{
+        "--calendar-hours": hours.length,
+        "--timezone-rails": orderedTimeZones.length,
+        "--timezone-rail-width": `${56 + (orderedTimeZones.length - 1) * 46}px`,
+      } as CSSProperties}
     >
-      <div className="week-header-spacer" />
+      {timeZoneWarning ? (
+        <div className="calendar-timezone-warning">
+          <span>{timeZoneWarning}</span>
+          <button onClick={() => setTimeZoneWarning(undefined)} type="button">
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+      <div className="week-header-spacer">
+        <div className="timezone-rail-headers">
+          {orderedTimeZones.map((railTimeZone) => {
+            const shiftNote =
+              railTimeZone === timeZone
+                ? undefined
+                : getSecondaryShiftNote(railTimeZone);
+            return (
+              <div
+                className={`timezone-rail-header${
+                  railTimeZone === timeZone ? " primary" : ""
+                }`}
+                key={railTimeZone}
+                title={railTimeZone}
+              >
+                <strong>{getTimeZoneLabel(railTimeZone)}</strong>
+                {shiftNote ? <small>{shiftNote}</small> : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
       <div className="week-header">
         {weekDays.map((day) => (
           <div
@@ -1160,11 +1305,11 @@ function WeekView({
           const category = findCategoryById(categories, segment.block.categoryId);
           const colors = getCategoryColorValues(category?.color);
           const segmentStartsAtBlockStart = isSameCalendarDay(
-            new Date(segment.block.startsAt),
+            toZonedCalendarDate(segment.block.startsAt, timeZone),
             weekDays[segment.startIndex],
           );
           const segmentEndsAtBlockEnd = isSameCalendarDay(
-            addCalendarDays(getAllDayEndDate(segment.block), -1),
+            addCalendarDays(getAllDayEndDate(segment.block, timeZone), -1),
             weekDays[segment.endIndex],
           );
           return (
@@ -1271,10 +1416,19 @@ function WeekView({
         ))}
       </div>
 
-      <div className="hour-labels" aria-hidden="true">
-        {hours.map((hour) => (
-          <div className="hour-label" key={hour}>
-            {formatHour(hour)}
+      <div className="hour-label-rails" aria-hidden="true">
+        {orderedTimeZones.map((railTimeZone) => (
+          <div
+            className={`hour-labels${railTimeZone === timeZone ? " primary" : ""}`}
+            key={railTimeZone}
+          >
+            {hours.map((hour) => (
+              <div className="hour-label" key={hour}>
+                {railTimeZone === timeZone
+                  ? formatHour(hour)
+                  : getSecondaryHourLabel(railTimeZone, hour)}
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -1317,9 +1471,9 @@ function WeekView({
                 />
               ) : null}
               {getLaidOutBlocks(
-                getBlocksForDay(timedBlocks, day).map((block) =>
+                getBlocksForDay(timedBlocks, day, timeZone).map((block) =>
                   resizingBlock?.previewBlock.id === block.id
-                    ? (getBlocksForDay([resizingBlock.previewBlock], day)[0] ??
+                    ? (getBlocksForDay([resizingBlock.previewBlock], day, timeZone)[0] ??
                       block)
                     : block,
                 ),

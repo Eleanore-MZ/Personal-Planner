@@ -3,6 +3,7 @@ import { formatTime } from "../../utils/date";
 import { getBlockPosition, getCategoryColorValues } from "../../utils/calendar";
 import { findCategoryById } from "../../utils/categories";
 import type { Category, TimeBlock } from "../../types/domain";
+import { useCalendarTimeZone } from "../useCalendarTimeZone";
 
 type CalendarBlockProps = {
   block: TimeBlock;
@@ -39,9 +40,10 @@ function CalendarBlock({
   onDragEnd,
   onResizeStart,
 }: CalendarBlockProps) {
+  const timeZone = useCalendarTimeZone();
   const category = findCategoryById(categories, block.categoryId);
   const colors = getCategoryColorValues(category?.color);
-  const position = getBlockPosition(block, visibleStartHour);
+  const position = getBlockPosition(block, visibleStartHour, timeZone);
   const isPast = new Date(block.endsAt).getTime() < Date.now();
   const hasRoomForCategory = position.height >= 30;
   const hasRoomForKindMeta = position.height >= 44;
@@ -113,7 +115,7 @@ function CalendarBlock({
       ) : null}
       <span className="block-title">{block.title}</span>
       <span className="block-time">
-        {formatTime(block.startsAt)} - {formatTime(block.endsAt)}
+        {formatTime(block.startsAt, timeZone)} - {formatTime(block.endsAt, timeZone)}
       </span>
       {hasRoomForCategory ? (
         <span className="block-category">{category?.name ?? "Uncategorized"}</span>

@@ -49,6 +49,10 @@ import {
   startOfWeek,
 } from "../utils/calendar";
 import { SegmentedControl, ToggleRow } from "./ui/ChoiceControls";
+import {
+  resolveZonedDateTime,
+  toZonedCalendarDate,
+} from "../utils/timezone";
 
 type TaskSidebarScope = "week" | "month" | "all";
 type TaskSidebarTaskMode = "open" | "completed";
@@ -170,6 +174,8 @@ type InspectorPanelProps = {
   onToggleHiddenCalendarCategories: (showHidden: boolean) => void;
   onSelectStatsDate: (date: Date) => void;
   onUpdateStatsFilters: (filters: StatsFilters) => void;
+  timeZone: string;
+  timeZones: string[];
 };
 
 const toDateInputValue = (date: Date) => {
@@ -289,6 +295,8 @@ function InspectorPanel({
   onToggleHiddenCalendarCategories,
   onSelectStatsDate,
   onUpdateStatsFilters,
+  timeZone,
+  timeZones,
 }: InspectorPanelProps) {
   const [isEditingBlock, setIsEditingBlock] = useState(false);
   const [blockTitle, setBlockTitle] = useState("");
@@ -297,6 +305,7 @@ function InspectorPanel({
   const [blockEndDate, setBlockEndDate] = useState("");
   const [blockStartTime, setBlockStartTime] = useState("");
   const [blockEndTime, setBlockEndTime] = useState("");
+  const [blockDateTimeWarning, setBlockDateTimeWarning] = useState<string>();
   const [taskTitle, setTaskTitle] = useState("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
@@ -334,7 +343,7 @@ function InspectorPanel({
     : undefined;
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   const selectedDateBlocks = selectedDate
-    ? getBlocksForDay(timeBlocks, selectedDate)
+    ? getBlocksForDay(timeBlocks, selectedDate, timeZone)
     : [];
   const selectedDateTasks = selectedDate
     ? tasks.filter(
@@ -800,23 +809,36 @@ function InspectorPanel({
     const nextEndTime = nextValues.endTime ?? blockEndTime;
     const normalizedEndDate =
       nextEndDate < nextStartDate ? nextStartDate : nextEndDate;
-    const startsAt = nextIsAllDay
-      ? new Date(`${nextStartDate}T00:00:00`)
-      : new Date(`${nextStartDate}T${nextStartTime}:00`);
-    const endsAt = nextIsAllDay
-      ? new Date(`${normalizedEndDate}T00:00:00`)
-      : new Date(`${normalizedEndDate}T${nextEndTime}:00`);
+    const endDate = nextIsAllDay
+      ? toDateInputValue(addCalendarDays(new Date(`${normalizedEndDate}T00:00:00`), 1))
+      : normalizedEndDate;
+    const startsAt = resolveZonedDateTime(
+      nextStartDate,
+      nextIsAllDay ? "00:00" : nextStartTime,
+      timeZone,
+    );
+    const endsAt = resolveZonedDateTime(
+      endDate,
+      nextIsAllDay ? "00:00" : nextEndTime,
+      timeZone,
+    );
 
-    if (nextIsAllDay) {
-      endsAt.setDate(endsAt.getDate() + 1);
-    } else if (endsAt <= startsAt) {
-      endsAt.setMinutes(startsAt.getMinutes() + 15);
+    if (startsAt.status !== "valid" || endsAt.status !== "valid") {
+      setBlockDateTimeWarning(
+        "This wall time is invalid or ambiguous because of a DST transition. Use Advanced Edit to choose an exact occurrence.",
+      );
+      return;
     }
+    if (endsAt.date <= startsAt.date) {
+      endsAt.date.setTime(startsAt.date.getTime() + 15 * 60000);
+    }
+    setBlockDateTimeWarning(undefined);
 
     updateSelectedBlock({
       isAllDay: nextIsAllDay,
-      startsAt: startsAt.toISOString(),
-      endsAt: endsAt.toISOString(),
+      startsAt: startsAt.date.toISOString(),
+      endsAt: endsAt.date.toISOString(),
+      timeZone,
     });
   };
   const commitTaskTitle = () => {
@@ -847,8 +869,8 @@ function InspectorPanel({
       return;
     }
 
-    const startsAt = new Date(selectedBlock.startsAt);
-    const endsAt = new Date(selectedBlock.endsAt);
+    const startsAt = toZonedCalendarDate(selectedBlock.startsAt, timeZone);
+    const endsAt = toZonedCalendarDate(selectedBlock.endsAt, timeZone);
     setBlockTitle(selectedBlock.title);
     setBlockNotes(selectedBlock.notes);
     setBlockStartDate(toDateInputValue(startsAt));
@@ -859,7 +881,7 @@ function InspectorPanel({
     );
     setBlockStartTime(toTimeInputValue(startsAt));
     setBlockEndTime(toTimeInputValue(endsAt));
-  }, [selectedBlock]);
+  }, [selectedBlock, timeZone]);
 
   useEffect(() => {
     if (!selectedTask) {
@@ -1160,7 +1182,7 @@ function InspectorPanel({
             </div>
             <button
               className="toolbar-button"
-              onClick={() => updateStatsPeriodDate(getCurrentPeriodDate())}
+              onClick={() => updateStatsPeriodDate(getCurrentPeriodDate(timeZone))}
               type="button"
             >
               Current Period
@@ -1406,9 +1428,12 @@ function InspectorPanel({
                 </label>
               </div>
             ) : null}
+            {blockDateTimeWarning ? (
+              <small className="field-helper-text">{blockDateTimeWarning}</small>
+            ) : null}
             <div className="info-row compact">
               <span>Repeats</span>
-              <strong>{formatRecurrenceLabel(selectedBlock)}</strong>
+              <strong>{formatRecurrenceLabel(selectedBlock, timeZone)}</strong>
             </div>
             <label className="inspector-field">
               <span>Linked task</span>
@@ -1586,7 +1611,7 @@ function InspectorPanel({
                     <small>
                       {isAllDayBlock(block)
                         ? "All day"
-                        : formatDateTimeRange(block.startsAt, block.endsAt)}
+                        : formatDateTimeRange(block.startsAt, block.endsAt, timeZone)}
                     </small>
                   </button>
                 ))}
@@ -1616,7 +1641,7 @@ function InspectorPanel({
             <div className="detail-meta">
               {isAllDayBlock(selectedBlock)
                 ? "All day"
-                : formatDateTimeRange(selectedBlock.startsAt, selectedBlock.endsAt)}
+                : formatDateTimeRange(selectedBlock.startsAt, selectedBlock.endsAt, timeZone)}
             </div>
             <p>{selectedBlock.notes}</p>
             <div className="info-row compact">
@@ -1633,7 +1658,7 @@ function InspectorPanel({
             ) : null}
             <div className="info-row compact">
               <span>Repeats</span>
-              <strong>{formatRecurrenceLabel(selectedBlock)}</strong>
+              <strong>{formatRecurrenceLabel(selectedBlock, timeZone)}</strong>
             </div>
             <div className="detail-actions">
               <button
@@ -1702,7 +1727,7 @@ function InspectorPanel({
                   <small>
                     {isAllDayBlock(block)
                       ? "All day"
-                      : formatDateTimeRange(block.startsAt, block.endsAt)}
+                      : formatDateTimeRange(block.startsAt, block.endsAt, timeZone)}
                   </small>
                 </button>
               ))}
@@ -2026,7 +2051,9 @@ function InspectorPanel({
           categories={categories}
           onClose={() => setIsEditingBlock(false)}
           onSave={(input) => onUpdateTimeBlock(input as TimeBlock)}
+          primaryTimeZone={timeZone}
           tasks={tasks}
+          timeZones={timeZones}
         />
       ) : null}
     </aside>

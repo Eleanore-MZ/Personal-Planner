@@ -78,4 +78,5 @@ export type TimeBlock = {
   recurrenceCount?: number;
   recurrenceExceptions?: string[];
   recurringTimeBlockId?: string;
+  timeZone?: string;
 };

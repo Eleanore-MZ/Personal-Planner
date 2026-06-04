@@ -1,6 +1,13 @@
 import { useState } from "react";
 import type { Task } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
+import { useCalendarTimeZone } from "../useCalendarTimeZone";
+import {
+  resolveZonedDateTime,
+  toZonedCalendarDate,
+  type AmbiguousTimeChoice,
+} from "../../utils/timezone";
+import { SegmentedControl } from "../ui/ChoiceControls";
 
 type PlanSessionDialogProps = {
   task: Task;
@@ -20,15 +27,39 @@ function PlanSessionDialog({
   onClose,
   onPlanSession,
 }: PlanSessionDialogProps) {
-  const [date, setDate] = useState(() => toDateInputValue(new Date()));
+  const timeZone = useCalendarTimeZone();
+  const [date, setDate] = useState(() =>
+    toDateInputValue(toZonedCalendarDate(new Date(), timeZone)),
+  );
   const [startTime, setStartTime] = useState("09:00");
   const [duration, setDuration] = useState("60");
+  const [ambiguousTimeChoice, setAmbiguousTimeChoice] =
+    useState<AmbiguousTimeChoice>();
+  const [dateTimeError, setDateTimeError] = useState<string>();
+  const [hasAmbiguousDateTime, setHasAmbiguousDateTime] = useState(false);
 
   const handleSubmit = () => {
-    const startsAt = new Date(`${date}T${startTime}:00`);
+    const startResolution = resolveZonedDateTime(
+      date,
+      startTime,
+      timeZone,
+      ambiguousTimeChoice,
+    );
+    if (startResolution.status !== "valid") {
+      const ambiguous = startResolution.status === "ambiguous";
+      setHasAmbiguousDateTime(ambiguous);
+      setDateTimeError(
+        ambiguous
+          ? "This wall time occurs twice. Choose the first or second occurrence."
+          : startResolution.message,
+      );
+      return;
+    }
+    setDateTimeError(undefined);
+    setHasAmbiguousDateTime(false);
+    const startsAt = startResolution.date;
     const durationMinutes = Math.max(15, Number(duration));
-    const endsAt = new Date(startsAt);
-    endsAt.setMinutes(endsAt.getMinutes() + durationMinutes);
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
 
     onPlanSession({
       id: `block-${task.id}-${startsAt.getTime()}`,
@@ -41,6 +72,7 @@ function PlanSessionDialog({
       outcome: "active",
       kind: "task-session",
       source: "manual",
+      timeZone,
     });
     onClose();
   };
@@ -62,7 +94,12 @@ function PlanSessionDialog({
           <label>
             <span>Date</span>
             <input
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) => {
+                setDate(event.target.value);
+                setAmbiguousTimeChoice(undefined);
+                setDateTimeError(undefined);
+                setHasAmbiguousDateTime(false);
+              }}
               type="date"
               value={date}
             />
@@ -70,7 +107,12 @@ function PlanSessionDialog({
           <label>
             <span>Start time</span>
             <input
-              onChange={(event) => setStartTime(event.target.value)}
+              onChange={(event) => {
+                setStartTime(event.target.value);
+                setAmbiguousTimeChoice(undefined);
+                setDateTimeError(undefined);
+                setHasAmbiguousDateTime(false);
+              }}
               type="time"
               value={startTime}
             />
@@ -89,6 +131,25 @@ function PlanSessionDialog({
               <option value="120">2 hours</option>
             </select>
           </label>
+          {hasAmbiguousDateTime ? (
+            <div className="dialog-wide-field timezone-resolution-panel">
+              <small className="field-helper-text">{dateTimeError}</small>
+              <SegmentedControl
+                ariaLabel="DST occurrence"
+                compact
+                onChange={setAmbiguousTimeChoice}
+                options={[
+                  { value: "earlier", label: "First occurrence" },
+                  { value: "later", label: "Second occurrence" },
+                ]}
+                value={ambiguousTimeChoice ?? ""}
+              />
+            </div>
+          ) : dateTimeError ? (
+            <small className="dialog-wide-field field-helper-text">
+              {dateTimeError}
+            </small>
+          ) : null}
         </div>
 
         <div className="fake-dialog-actions">

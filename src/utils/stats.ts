@@ -19,6 +19,12 @@ import {
   startOfWeek,
 } from "./calendar";
 import { isTaskComplete } from "./tasks";
+import { DateTime } from "luxon";
+import {
+  getZonedDayBoundary,
+  systemTimeZone,
+  toZonedCalendarDate,
+} from "./timezone";
 
 export type StatsDateRange = {
   start: Date;
@@ -192,6 +198,16 @@ const rhythmWeekdayFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 const oneDayMs = 24 * 60 * 60 * 1000;
+const getBoundaryInstant = (date: Date, timeZone?: string) =>
+  timeZone ? getZonedDayBoundary(date, timeZone) : date;
+const getCalendarDayIndex = (start: Date, date: Date) =>
+  Math.round(
+    (Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) -
+      Date.UTC(start.getFullYear(), start.getMonth(), start.getDate())) /
+      oneDayMs,
+  );
+const getCalendarDayCount = (start: Date, end: Date) =>
+  Math.max(1, getCalendarDayIndex(start, end));
 
 const isCanceled = (task: Task) => task.status === "canceled";
 const isActiveBlock = (block: TimeBlock) => block.outcome === "active";
@@ -230,16 +246,33 @@ export function getTimeBlockMinutes(block: TimeBlock) {
   return Math.max((endsAt - startsAt) / 60000, 0);
 }
 
-function getOverlappingMinutes(block: TimeBlock, start: Date, end: Date) {
+function getOverlappingMinutesForInstants(
+  block: TimeBlock,
+  startMs: number,
+  endMs: number,
+) {
   if (isAllDayBlock(block)) {
     return 0;
   }
 
   const startsAt = new Date(block.startsAt).getTime();
   const endsAt = new Date(block.endsAt).getTime();
-  const overlapStart = Math.max(startsAt, start.getTime());
-  const overlapEnd = Math.min(endsAt, end.getTime());
+  const overlapStart = Math.max(startsAt, startMs);
+  const overlapEnd = Math.min(endsAt, endMs);
   return Math.max((overlapEnd - overlapStart) / 60000, 0);
+}
+
+export function getOverlappingMinutes(
+  block: TimeBlock,
+  start: Date,
+  end: Date,
+  timeZone?: string,
+) {
+  return getOverlappingMinutesForInstants(
+    block,
+    getBoundaryInstant(start, timeZone).getTime(),
+    getBoundaryInstant(end, timeZone).getTime(),
+  );
 }
 
 function getCategoryStatsGroup(
@@ -356,19 +389,22 @@ export function getNextPeriodDate(mode: StatsRange, selectedDate: Date) {
   return addCalendarDays(selectedDate, 7);
 }
 
-export function getCurrentPeriodDate() {
-  return new Date();
+export function getCurrentPeriodDate(timeZone?: string) {
+  return timeZone ? toZonedCalendarDate(new Date(), timeZone) : new Date();
 }
 
 export function getTimeBlocksInRange(
   timeBlocks: TimeBlock[],
   start: Date,
   end: Date,
+  timeZone?: string,
 ) {
+  const rangeStart = getBoundaryInstant(start, timeZone).getTime();
+  const rangeEnd = getBoundaryInstant(end, timeZone).getTime();
   return timeBlocks.filter((block) => {
     const startsAt = new Date(block.startsAt).getTime();
     const endsAt = new Date(block.endsAt).getTime();
-    return endsAt > start.getTime() && startsAt < end.getTime();
+    return endsAt > rangeStart && startsAt < rangeEnd;
   });
 }
 
@@ -376,10 +412,11 @@ export function getRecordedTimeBlockDayCount(
   timeBlocks: TimeBlock[],
   start: Date,
   end: Date,
+  timeZone?: string,
 ) {
   const recordedDays = new Set<string>();
-  const rangeStart = start.getTime();
-  const rangeEnd = end.getTime();
+  const rangeStart = getBoundaryInstant(start, timeZone).getTime();
+  const rangeEnd = getBoundaryInstant(end, timeZone).getTime();
 
   timeBlocks.forEach((block) => {
     const startsAt = new Date(block.startsAt).getTime();
@@ -391,8 +428,16 @@ export function getRecordedTimeBlockDayCount(
       return;
     }
 
-    const lastRecordedDay = startOfDay(new Date(overlapEnd - 1));
-    const recordedDay = startOfDay(new Date(overlapStart));
+    const lastRecordedDay = startOfDay(
+      timeZone
+        ? toZonedCalendarDate(new Date(overlapEnd - 1), timeZone)
+        : new Date(overlapEnd - 1),
+    );
+    const recordedDay = startOfDay(
+      timeZone
+        ? toZonedCalendarDate(new Date(overlapStart), timeZone)
+        : new Date(overlapStart),
+    );
 
     while (recordedDay.getTime() <= lastRecordedDay.getTime()) {
       recordedDays.add(
@@ -409,13 +454,16 @@ export function getYearStatsCoverageWindow(
   timeBlocks: TimeBlock[],
   year: number,
   currentDate = new Date(),
+  timeZone?: string,
 ): YearStatsCoverageWindow | null {
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year + 1, 0, 1);
+  const yearStartInstant = getBoundaryInstant(yearStart, timeZone);
+  const yearEndInstant = getBoundaryInstant(yearEnd, timeZone);
   const meaningfulBlocks = timeBlocks.filter((block) => {
     const startsAt = new Date(block.startsAt).getTime();
     const endsAt = new Date(block.endsAt).getTime();
-    return endsAt > yearStart.getTime() && startsAt < yearEnd.getTime();
+    return endsAt > yearStartInstant.getTime() && startsAt < yearEndInstant.getTime();
   });
 
   if (meaningfulBlocks.length === 0) {
@@ -424,23 +472,34 @@ export function getYearStatsCoverageWindow(
 
   const firstBlockTime = Math.min(
     ...meaningfulBlocks.map((block) =>
-      Math.max(new Date(block.startsAt).getTime(), yearStart.getTime()),
+      Math.max(new Date(block.startsAt).getTime(), yearStartInstant.getTime()),
     ),
   );
   const lastBlockTime = Math.max(
     ...meaningfulBlocks.map((block) =>
-      Math.min(new Date(block.endsAt).getTime() - 1, yearEnd.getTime() - 1),
+      Math.min(new Date(block.endsAt).getTime() - 1, yearEndInstant.getTime() - 1),
     ),
   );
-  const coverageStart = startOfDay(new Date(firstBlockTime));
-  const currentYear = currentDate.getFullYear();
-  const lastBlockDay = startOfDay(new Date(lastBlockTime));
+  const coverageStart = startOfDay(
+    timeZone
+      ? toZonedCalendarDate(new Date(firstBlockTime), timeZone)
+      : new Date(firstBlockTime),
+  );
+  const zonedCurrentDate = timeZone
+    ? toZonedCalendarDate(currentDate, timeZone)
+    : currentDate;
+  const currentYear = zonedCurrentDate.getFullYear();
+  const lastBlockDay = startOfDay(
+    timeZone
+      ? toZonedCalendarDate(new Date(lastBlockTime), timeZone)
+      : new Date(lastBlockTime),
+  );
   const coverageEnd = startOfDay(
     currentYear === year
       ? new Date(
           Math.min(
             Math.max(
-              startOfDay(currentDate).getTime(),
+              startOfDay(zonedCurrentDate).getTime(),
               coverageStart.getTime(),
               lastBlockDay.getTime(),
             ),
@@ -453,6 +512,7 @@ export function getYearStatsCoverageWindow(
     meaningfulBlocks,
     coverageStart,
     addCalendarDays(coverageEnd, 1),
+    timeZone,
   );
 
   return {
@@ -478,8 +538,14 @@ export function getTasksCompletedInRange(tasks: Task[], start: Date, end: Date) 
   return getTasksDueInRange(tasks, start, end).filter(isTaskComplete);
 }
 
-export function getOverdueTasks(tasks: Task[], referenceDate = new Date()) {
-  const referenceDay = startOfDay(referenceDate).getTime();
+export function getOverdueTasks(
+  tasks: Task[],
+  referenceDate = new Date(),
+  timeZone?: string,
+) {
+  const referenceDay = startOfDay(
+    timeZone ? toZonedCalendarDate(referenceDate, timeZone) : referenceDate,
+  ).getTime();
   return tasks.filter((task) => {
     if (!task.dueDate || isTaskComplete(task) || isCanceled(task)) {
       return false;
@@ -779,23 +845,15 @@ function formatMinuteLabel(minuteOfDay: number) {
     .padStart(2, "0")}`;
 }
 
-function getNextHourStart(date: Date) {
-  const nextHour = new Date(date);
-  nextHour.setMinutes(0, 0, 0);
-
-  if (nextHour.getTime() <= date.getTime()) {
-    nextHour.setHours(nextHour.getHours() + 1);
-  }
-
-  return nextHour;
-}
-
 export function calculateHourOfDayActivity(
   timeBlocks: TimeBlock[],
   start: Date,
   end: Date,
+  timeZone = systemTimeZone,
 ) {
   const minutesByHour = Array.from({ length: 24 }, () => 0);
+  const rangeStartMs = getBoundaryInstant(start, timeZone).getTime();
+  const rangeEndMs = getBoundaryInstant(end, timeZone).getTime();
 
   getTimeBlocksForTimeMode(timeBlocks, "active").forEach((block) => {
     if (isAllDayBlock(block)) {
@@ -803,14 +861,24 @@ export function calculateHourOfDayActivity(
     }
 
     let cursor = new Date(
-      Math.max(new Date(block.startsAt).getTime(), start.getTime()),
+      Math.max(
+        new Date(block.startsAt).getTime(),
+        rangeStartMs,
+      ),
     );
     const blockEnd = new Date(
-      Math.min(new Date(block.endsAt).getTime(), end.getTime()),
+      Math.min(
+        new Date(block.endsAt).getTime(),
+        rangeEndMs,
+      ),
     );
 
     while (cursor.getTime() < blockEnd.getTime()) {
-      const nextBoundary = getNextHourStart(cursor);
+      const nextBoundary = DateTime.fromJSDate(cursor)
+        .setZone(timeZone)
+        .startOf("hour")
+        .plus({ hours: 1 })
+        .toJSDate();
       const segmentEnd = new Date(
         Math.min(nextBoundary.getTime(), blockEnd.getTime()),
       );
@@ -819,7 +887,7 @@ export function calculateHourOfDayActivity(
         0,
       );
 
-      minutesByHour[cursor.getHours()] += minutes;
+      minutesByHour[toZonedCalendarDate(cursor, timeZone).getHours()] += minutes;
       cursor = segmentEnd;
     }
   });
@@ -854,6 +922,7 @@ export function calculateWeekRhythm(
   start: Date,
   categories: Category[],
   statsGroups: StatsGroup[],
+  timeZone = systemTimeZone,
 ): WeekRhythmDay[] {
   const activeBlocks = getTimeBlocksForTimeMode(timeBlocks, "active").filter(
     (block) => !isAllDayBlock(block),
@@ -878,11 +947,13 @@ export function calculateWeekRhythm(
   return Array.from({ length: 7 }, (_, dayIndex) => {
     const dayStart = addCalendarDays(start, dayIndex);
     const dayEnd = addCalendarDays(dayStart, 1);
+    const dayStartInstant = getBoundaryInstant(dayStart, timeZone).getTime();
+    const dayEndInstant = getBoundaryInstant(dayEnd, timeZone).getTime();
     const intervals = activeBlocks.flatMap((block) => {
       const blockStart = new Date(block.startsAt).getTime();
       const blockEnd = new Date(block.endsAt).getTime();
-      const overlapStart = Math.max(blockStart, dayStart.getTime());
-      const overlapEnd = Math.min(blockEnd, dayEnd.getTime());
+      const overlapStart = Math.max(blockStart, dayStartInstant);
+      const overlapEnd = Math.min(blockEnd, dayEndInstant);
 
       if (overlapEnd <= overlapStart) {
         return [];
@@ -890,8 +961,16 @@ export function calculateWeekRhythm(
 
       const category = categoryById.get(block.categoryId);
       const group = getGroupForBlock(block);
-      const startMinute = Math.max((overlapStart - dayStart.getTime()) / 60000, 0);
-      const endMinute = Math.min((overlapEnd - dayStart.getTime()) / 60000, 24 * 60);
+      const zonedStart = toZonedCalendarDate(new Date(overlapStart), timeZone);
+      const zonedEnd = toZonedCalendarDate(new Date(overlapEnd), timeZone);
+      const startMinute = Math.max(
+        zonedStart.getHours() * 60 + zonedStart.getMinutes(),
+        0,
+      );
+      const endMinute =
+        isSameCalendarDay(zonedStart, zonedEnd)
+          ? zonedEnd.getHours() * 60 + zonedEnd.getMinutes()
+          : 24 * 60;
       const timeRange = `${formatMinuteLabel(startMinute)}-${formatMinuteLabel(
         endMinute,
       )}`;
@@ -944,14 +1023,18 @@ export function calculateDailyPlannedHours(
   start: Date,
   end: Date,
   timeMode: StatsTimeMode = "active",
+  timeZone?: string,
 ): DailyHoursDatum[] {
   const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
-  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const dayCount = getCalendarDayCount(start, end);
   return Array.from({ length: dayCount }, (_, index) => {
     const dayStart = addCalendarDays(start, index);
     const dayEnd = addCalendarDays(dayStart, 1);
+    const dayStartMs = getBoundaryInstant(dayStart, timeZone).getTime();
+    const dayEndMs = getBoundaryInstant(dayEnd, timeZone).getTime();
     const minutes = selectedBlocks.reduce(
-      (total, block) => total + getOverlappingMinutes(block, dayStart, dayEnd),
+      (total, block) =>
+        total + getOverlappingMinutesForInstants(block, dayStartMs, dayEndMs),
       0,
     );
 
@@ -970,6 +1053,7 @@ export function calculateDailyStatsGroupHours(
   categories: Category[],
   statsGroups: StatsGroup[],
   timeMode: StatsTimeMode = "active",
+  timeZone?: string,
 ): DailyGroupHoursDatum[] {
   const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
   const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -1001,15 +1085,17 @@ export function calculateDailyStatsGroupHours(
     const category = categoryById.get(block.categoryId);
     return category ? groupByCategoryId.get(category.id) ?? otherGroup : otherGroup;
   };
-  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const dayCount = getCalendarDayCount(start, end);
 
   return Array.from({ length: dayCount }, (_, index) => {
     const dayStart = addCalendarDays(start, index);
     const dayEnd = addCalendarDays(dayStart, 1);
+    const dayStartMs = getBoundaryInstant(dayStart, timeZone).getTime();
+    const dayEndMs = getBoundaryInstant(dayEnd, timeZone).getTime();
     const minutesByGroup = new Map<string, number>();
 
     selectedBlocks.forEach((block) => {
-      const minutes = getOverlappingMinutes(block, dayStart, dayEnd);
+      const minutes = getOverlappingMinutesForInstants(block, dayStartMs, dayEndMs);
 
       if (minutes <= 0) {
         return;
@@ -1047,6 +1133,7 @@ export function calculateWeeklyStatsGroupHours(
   categories: Category[],
   statsGroups: StatsGroup[],
   timeMode: StatsTimeMode = "active",
+  timeZone?: string,
 ): DailyGroupHoursDatum[] {
   const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
   const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -1083,10 +1170,12 @@ export function calculateWeeklyStatsGroupHours(
   return Array.from({ length: weekCount }, (_, index) => {
     const weekStart = addCalendarDays(start, index * 7);
     const weekEnd = new Date(Math.min(addCalendarDays(weekStart, 7).getTime(), end.getTime()));
+    const weekStartMs = getBoundaryInstant(weekStart, timeZone).getTime();
+    const weekEndMs = getBoundaryInstant(weekEnd, timeZone).getTime();
     const minutesByGroup = new Map<string, number>();
 
     selectedBlocks.forEach((block) => {
-      const minutes = getOverlappingMinutes(block, weekStart, weekEnd);
+      const minutes = getOverlappingMinutesForInstants(block, weekStartMs, weekEndMs);
 
       if (minutes <= 0) {
         return;
@@ -1121,6 +1210,7 @@ export function calculateMonthlyStatsGroupHours(
   categories: Category[],
   statsGroups: StatsGroup[],
   timeMode: StatsTimeMode = "active",
+  timeZone?: string,
 ): DailyGroupHoursDatum[] {
   const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
   const categoryById = new Map(categories.map((category) => [category.id, category]));
@@ -1156,10 +1246,12 @@ export function calculateMonthlyStatsGroupHours(
   return Array.from({ length: 12 }, (_, month) => {
     const monthStart = new Date(year, month, 1);
     const monthEnd = new Date(year, month + 1, 1);
+    const monthStartMs = getBoundaryInstant(monthStart, timeZone).getTime();
+    const monthEndMs = getBoundaryInstant(monthEnd, timeZone).getTime();
     const minutesByGroup = new Map<string, number>();
 
     selectedBlocks.forEach((block) => {
-      const minutes = getOverlappingMinutes(block, monthStart, monthEnd);
+      const minutes = getOverlappingMinutesForInstants(block, monthStartMs, monthEndMs);
 
       if (minutes <= 0) {
         return;
@@ -1197,9 +1289,12 @@ export function calculateSleepStats(
   averagePolicy: SleepAveragePolicy = "logged-days",
   recordedDayCount?: number,
   currentDate = new Date(),
+  timeZone?: string,
 ): SleepStats {
-  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const dayCount = getCalendarDayCount(start, end);
   const minutesByDay = Array.from({ length: dayCount }, () => 0);
+  const rangeStartMs = getBoundaryInstant(start, timeZone).getTime();
+  const rangeEndMs = getBoundaryInstant(end, timeZone).getTime();
   let totalMinutes = 0;
 
   timeBlocks
@@ -1215,17 +1310,32 @@ export function calculateSleepStats(
         return;
       }
 
-      const overlapMinutes = getOverlappingMinutes(block, start, end);
+      const overlapMinutes = getOverlappingMinutesForInstants(
+        block,
+        rangeStartMs,
+        rangeEndMs,
+      );
 
       if (overlapMinutes <= 0) {
         return;
       }
 
-      const overlapEnd = Math.min(new Date(block.endsAt).getTime(), end.getTime());
-      const attributionDate = new Date(Math.max(overlapEnd - 1, start.getTime()));
-      const dayIndex = Math.floor(
-        (startOfDay(attributionDate).getTime() - start.getTime()) / oneDayMs,
+      const overlapEnd = Math.min(
+        new Date(block.endsAt).getTime(),
+        rangeEndMs,
       );
+      const attributionDate = timeZone
+        ? toZonedCalendarDate(
+            new Date(
+              Math.max(
+                overlapEnd - 1,
+                rangeStartMs,
+              ),
+            ),
+            timeZone,
+          )
+        : new Date(Math.max(overlapEnd - 1, start.getTime()));
+      const dayIndex = getCalendarDayIndex(startOfDay(start), startOfDay(attributionDate));
 
       totalMinutes += overlapMinutes;
 
@@ -1278,9 +1388,12 @@ export function calculateDailySleepHours(
   statsGroups: StatsGroup[],
   start: Date,
   end: Date,
+  timeZone?: string,
 ): DailyHoursDatum[] {
-  const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / oneDayMs));
+  const dayCount = getCalendarDayCount(start, end);
   const minutesByDay = Array.from({ length: dayCount }, () => 0);
+  const rangeStartMs = getBoundaryInstant(start, timeZone).getTime();
+  const rangeEndMs = getBoundaryInstant(end, timeZone).getTime();
 
   timeBlocks
     .filter((block) => isActiveBlock(block) && !isAllDayBlock(block))
@@ -1295,17 +1408,32 @@ export function calculateDailySleepHours(
         return;
       }
 
-      const overlapMinutes = getOverlappingMinutes(block, start, end);
+      const overlapMinutes = getOverlappingMinutesForInstants(
+        block,
+        rangeStartMs,
+        rangeEndMs,
+      );
 
       if (overlapMinutes <= 0) {
         return;
       }
 
-      const overlapEnd = Math.min(new Date(block.endsAt).getTime(), end.getTime());
-      const attributionDate = new Date(Math.max(overlapEnd - 1, start.getTime()));
-      const dayIndex = Math.floor(
-        (startOfDay(attributionDate).getTime() - start.getTime()) / oneDayMs,
+      const overlapEnd = Math.min(
+        new Date(block.endsAt).getTime(),
+        rangeEndMs,
       );
+      const attributionDate = timeZone
+        ? toZonedCalendarDate(
+            new Date(
+              Math.max(
+                overlapEnd - 1,
+                rangeStartMs,
+              ),
+            ),
+            timeZone,
+          )
+        : new Date(Math.max(overlapEnd - 1, start.getTime()));
+      const dayIndex = getCalendarDayIndex(startOfDay(start), startOfDay(attributionDate));
 
       if (dayIndex >= 0 && dayIndex < minutesByDay.length) {
         minutesByDay[dayIndex] += overlapMinutes;
@@ -1326,13 +1454,17 @@ export function calculateMonthlyPlannedHours(
   timeBlocks: TimeBlock[],
   year: number,
   timeMode: StatsTimeMode = "active",
+  timeZone?: string,
 ) {
   const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode);
   return Array.from({ length: 12 }, (_, month) => {
     const start = new Date(year, month, 1);
     const end = new Date(year, month + 1, 1);
+    const startMs = getBoundaryInstant(start, timeZone).getTime();
+    const endMs = getBoundaryInstant(end, timeZone).getTime();
     const minutes = selectedBlocks.reduce(
-      (total, block) => total + getOverlappingMinutes(block, start, end),
+      (total, block) =>
+        total + getOverlappingMinutesForInstants(block, startMs, endMs),
       0,
     );
     return {
@@ -1348,6 +1480,7 @@ export function calculateTaskStatusStats(
   _start: Date,
   _end: Date,
   referenceDate = new Date(),
+  timeZone?: string,
 ): TaskStatusStats {
   return {
     notStarted: tasks.filter((task) => task.status === "todo").length,
@@ -1355,7 +1488,7 @@ export function calculateTaskStatusStats(
     blocked: tasks.filter((task) => task.status === "blocked").length,
     done: tasks.filter((task) => task.status === "done").length,
     canceled: tasks.filter((task) => task.status === "canceled").length,
-    overdue: getOverdueTasks(tasks, referenceDate).length,
+    overdue: getOverdueTasks(tasks, referenceDate, timeZone).length,
   };
 }
 
@@ -1368,17 +1501,19 @@ export function calculateStatsSummary(
   timeMode: StatsTimeMode = "active",
   referenceDate = new Date(),
   recordedDayCount?: number,
+  timeZone?: string,
 ): StatsSummary {
   const categoryHours = calculateCategoryHours(timeBlocks, categories, timeMode);
   const dayCount =
     recordedDayCount ??
-    getRecordedTimeBlockDayCount(timeBlocks, start, end);
+    getRecordedTimeBlockDayCount(timeBlocks, start, end, timeZone);
   const weekCount = dayCount / 7;
   const activeDailyHours = calculateDailyPlannedHours(
     timeBlocks,
     start,
     end,
     "active",
+    timeZone,
   );
   const busiestDay =
     activeDailyHours.reduce<DailyHoursDatum | null>((currentBusiestDay, day) => {
@@ -1406,7 +1541,7 @@ export function calculateStatsSummary(
     selectedTimeHours,
     completedTasks: getTasksCompletedInRange(tasks, start, end).length,
     dueTasks: getTasksDueInRange(tasks, start, end).length,
-    overdueTasks: getOverdueTasks(tasks, referenceDate).length,
+    overdueTasks: getOverdueTasks(tasks, referenceDate, timeZone).length,
     timeBlocksCount: getTimeBlocksForTimeMode(timeBlocks, timeMode).length,
     averageSelectedHoursPerDay:
       dayCount > 0 ? selectedTimeHours / dayCount : 0,
@@ -1426,6 +1561,7 @@ export function buildYearHeatmapData(
   categories: Category[],
   statsGroups: StatsGroup[],
   year: number,
+  timeZone?: string,
 ) {
   const days: YearHeatmapDay[] = [];
   const date = new Date(year, 0, 1);
@@ -1433,7 +1569,7 @@ export function buildYearHeatmapData(
   while (date.getFullYear() === year) {
     const dayStart = startOfDay(date);
     const dayEnd = addCalendarDays(dayStart, 1);
-    const dayBlocks = getBlocksForDay(timeBlocks, dayStart);
+    const dayBlocks = getBlocksForDay(timeBlocks, dayStart, timeZone);
     const trackedBlocks = dayBlocks.filter(
       (block) => isActiveBlock(block) && !isAllDayBlock(block),
     );
@@ -1458,6 +1594,9 @@ export function buildYearHeatmapData(
       dayStart,
       dayEnd,
       "period-days",
+      undefined,
+      new Date(),
+      timeZone,
     );
 
     days.push({
@@ -1656,10 +1795,19 @@ function getPressureCoverageWindow(
   examDates: Date[],
   rangeStart: Date,
   rangeEnd: Date,
+  timeZone?: string,
 ) {
   const start = startOfDay(rangeStart);
   const end = startOfDay(rangeEnd);
+  const startInstant = getBoundaryInstant(start, timeZone).getTime();
+  const endInstant = getBoundaryInstant(end, timeZone).getTime();
   const relevantTimes: number[] = [];
+  const toCoverageDayTime = (instant: number) =>
+    startOfDay(
+      timeZone
+        ? toZonedCalendarDate(new Date(instant), timeZone)
+        : new Date(instant),
+    ).getTime();
 
   timeBlocks.forEach((block) => {
     if (isAllDayBlock(block)) {
@@ -1669,12 +1817,12 @@ function getPressureCoverageWindow(
     const startsAt = new Date(block.startsAt).getTime();
     const endsAt = new Date(block.endsAt).getTime();
 
-    if (endsAt <= start.getTime() || startsAt >= end.getTime()) {
+    if (endsAt <= startInstant || startsAt >= endInstant) {
       return;
     }
 
-    relevantTimes.push(Math.max(startsAt, start.getTime()));
-    relevantTimes.push(Math.min(endsAt - 1, end.getTime() - 1));
+    relevantTimes.push(toCoverageDayTime(Math.max(startsAt, startInstant)));
+    relevantTimes.push(toCoverageDayTime(Math.min(endsAt - 1, endInstant - 1)));
   });
 
   tasks.forEach((task) => {
@@ -1720,6 +1868,7 @@ export function calculatePressureLevel(
   start: Date,
   end: Date,
   smoothingDays = 3,
+  timeZone?: string,
 ): PressureDatum[] {
   const rawDays: Array<
     Omit<PressureDatum, "rawPressure" | "smoothedPressure"> & {
@@ -1745,7 +1894,11 @@ export function calculatePressureLevel(
       return [];
     }
 
-    const examDate = startOfDay(new Date(block.startsAt));
+    const examDate = startOfDay(
+      timeZone
+        ? toZonedCalendarDate(block.startsAt, timeZone)
+        : new Date(block.startsAt),
+    );
     return Number.isNaN(examDate.getTime())
       ? []
       : [
@@ -1761,6 +1914,7 @@ export function calculatePressureLevel(
     examOccurrences.map((exam) => exam.date),
     date,
     rangeEnd,
+    timeZone,
   );
   const pressureTasks = tasks.flatMap((task) => {
     if (!task.dueDate || task.status === "canceled") {
@@ -1785,6 +1939,8 @@ export function calculatePressureLevel(
   while (date.getTime() < rangeEnd.getTime()) {
     const dayStart = startOfDay(date);
     const dayEnd = addCalendarDays(dayStart, 1);
+    const dayStartMs = getBoundaryInstant(dayStart, timeZone).getTime();
+    const dayEndMs = getBoundaryInstant(dayEnd, timeZone).getTime();
     const inCoverage = Boolean(
       coverageWindow &&
         dayStart.getTime() >= coverageWindow.start.getTime() &&
@@ -1812,7 +1968,8 @@ export function calculatePressureLevel(
     const taskWorkHours = inCoverage
       ?
       pressureBlocks.reduce(
-        (total, block) => total + getOverlappingMinutes(block, dayStart, dayEnd),
+        (total, block) =>
+          total + getOverlappingMinutesForInstants(block, dayStartMs, dayEndMs),
         0,
       ) / 60
       : 0;
@@ -1901,6 +2058,7 @@ export function calculateYearPressureLevel(
   timeBlocks: TimeBlock[],
   categories: Category[],
   year: number,
+  timeZone?: string,
 ): PressureDatum[] {
   return calculatePressureLevel(
     tasks,
@@ -1909,6 +2067,7 @@ export function calculateYearPressureLevel(
     new Date(year, 0, 1),
     new Date(year + 1, 0, 1),
     7,
+    timeZone,
   );
 }
 

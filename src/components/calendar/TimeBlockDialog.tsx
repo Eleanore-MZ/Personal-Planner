@@ -11,6 +11,14 @@ import type {
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import { isTaskComplete } from "../../utils/tasks";
 import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
+import {
+  getZonedDateInputValue,
+  resolveZonedDateTime,
+  toDateInputValue,
+  toTimeInputValue,
+  toZonedCalendarDate,
+  type AmbiguousTimeChoice,
+} from "../../utils/timezone";
 
 type TimeBlockDialogProps = {
   categories: Category[];
@@ -19,23 +27,12 @@ type TimeBlockDialogProps = {
   initialBlock?: CreateTimeBlockInput;
   onClose: () => void;
   onSave: (input: CreateTimeBlockInput | TimeBlock) => void | Promise<void>;
+  primaryTimeZone: string;
+  timeZones: string[];
 };
 
-const toDateInputValue = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const toOptionalDateInputValue = (value?: string) =>
-  value ? toDateInputValue(new Date(value)) : "";
-
-const toTimeInputValue = (date: Date) => {
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${hours}:${minutes}`;
-};
+const toOptionalDateInputValue = (value: string | undefined, timeZone: string) =>
+  value ? getZonedDateInputValue(value, timeZone) : "";
 
 const getAllDayEndInputValue = (date: Date) => {
   const inclusiveEndDate = new Date(date);
@@ -95,11 +92,18 @@ function TimeBlockDialog({
   initialBlock,
   onClose,
   onSave,
+  primaryTimeZone,
+  timeZones,
 }: TimeBlockDialogProps) {
   const isCreating = !block;
   const formBlock = block ?? initialBlock;
-  const startsAt = formBlock ? new Date(formBlock.startsAt) : new Date();
-  const endsAt = formBlock ? new Date(formBlock.endsAt) : new Date(startsAt);
+  const initialTimeZone = formBlock?.timeZone ?? primaryTimeZone;
+  const startsAt = formBlock
+    ? toZonedCalendarDate(formBlock.startsAt, initialTimeZone)
+    : toZonedCalendarDate(new Date(), initialTimeZone);
+  const endsAt = formBlock
+    ? toZonedCalendarDate(formBlock.endsAt, initialTimeZone)
+    : new Date(startsAt);
   if (!formBlock) {
     startsAt.setHours(9, 0, 0, 0);
     endsAt.setHours(10, 0, 0, 0);
@@ -128,6 +132,11 @@ function TimeBlockDialog({
   const [source] = useState<TimeBlock["source"]>(
     formBlock?.source ?? "manual",
   );
+  const [timeZone, setTimeZone] = useState(initialTimeZone);
+  const [ambiguousTimeChoice, setAmbiguousTimeChoice] =
+    useState<AmbiguousTimeChoice>();
+  const [hasAmbiguousDateTime, setHasAmbiguousDateTime] = useState(false);
+  const [dateTimeError, setDateTimeError] = useState<string>();
   const [taskId, setTaskId] = useState(
     linkedTask && !isTaskComplete(linkedTask) ? linkedTask.id : "",
   );
@@ -156,7 +165,7 @@ function TimeBlockDialog({
         (formBlock?.recurrenceEndDate ? "on" : "never"),
     );
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(
-    toOptionalDateInputValue(formBlock?.recurrenceEndDate),
+    toOptionalDateInputValue(formBlock?.recurrenceEndDate, initialTimeZone),
   );
   const [recurrenceCount, setRecurrenceCount] = useState(
     `${formBlock?.recurrenceCount ?? 10}`,
@@ -221,14 +230,47 @@ function TimeBlockDialog({
       return;
     }
 
-    const nextStartsAt = isAllDay
-      ? getStartOfDay(date)
-      : new Date(`${date}T${startTime}:00`);
-    const nextEndsAt = isAllDay
-      ? getNextDayStart(endDate < date ? date : endDate)
-      : new Date(`${endDate}T${endTime}:00`);
+    const normalizedEndDate = endDate < date ? date : endDate;
+    const nextStartResolution = resolveZonedDateTime(
+      date,
+      isAllDay ? "00:00" : startTime,
+      timeZone,
+      ambiguousTimeChoice,
+    );
+    const inclusiveEndDate = isAllDay
+      ? toDateInputValue(getNextDayStart(normalizedEndDate))
+      : normalizedEndDate;
+    const nextEndResolution = resolveZonedDateTime(
+      inclusiveEndDate,
+      isAllDay ? "00:00" : endTime,
+      timeZone,
+      ambiguousTimeChoice,
+    );
+    if (
+      nextStartResolution.status !== "valid" ||
+      nextEndResolution.status !== "valid"
+    ) {
+      const ambiguous =
+        nextStartResolution.status === "ambiguous" ||
+        nextEndResolution.status === "ambiguous";
+      setHasAmbiguousDateTime(ambiguous);
+      setDateTimeError(
+        ambiguous
+          ? "This wall time occurs twice. Choose the first or second occurrence."
+          : nextStartResolution.status === "invalid"
+            ? nextStartResolution.message
+            : nextEndResolution.status === "invalid"
+              ? nextEndResolution.message
+              : "Choose an exact wall time.",
+      );
+      return;
+    }
+    setHasAmbiguousDateTime(false);
+    setDateTimeError(undefined);
+    const nextStartsAt = nextStartResolution.date;
+    const nextEndsAt = nextEndResolution.date;
     if (nextEndsAt <= nextStartsAt) {
-      nextEndsAt.setDate(nextEndsAt.getDate() + 1);
+      nextEndsAt.setTime(nextStartsAt.getTime() + minimumBlockMinutes * 60000);
     }
     const minimumEndsAt = new Date(
       nextStartsAt.getTime() + minimumBlockMinutes * 60000,
@@ -259,11 +301,26 @@ function TimeBlockDialog({
       recurrenceEndDate:
         !isRepeating || recurrenceEndMode !== "on" || !recurrenceEndDate
           ? undefined
-          : new Date(`${recurrenceEndDate}T23:59:59`).toISOString(),
+          : resolveZonedDateTime(
+              recurrenceEndDate,
+              "23:59",
+              timeZone,
+              ambiguousTimeChoice,
+            ).status === "valid"
+            ? (
+                resolveZonedDateTime(
+                  recurrenceEndDate,
+                  "23:59",
+                  timeZone,
+                  ambiguousTimeChoice,
+                ) as { status: "valid"; date: Date }
+              ).date.toISOString()
+            : undefined,
       recurrenceCount:
         isRepeating && recurrenceEndMode === "after"
           ? normalizedCount
           : undefined,
+      timeZone,
     });
     onClose();
   };
@@ -333,6 +390,24 @@ function TimeBlockDialog({
           <label>
             <span>Source</span>
             <input readOnly value={sourceLabels[source]} />
+          </label>
+          <label>
+            <span>Timezone</span>
+            <select
+              onChange={(event) => {
+                setTimeZone(event.target.value);
+                setAmbiguousTimeChoice(undefined);
+                setHasAmbiguousDateTime(false);
+                setDateTimeError(undefined);
+              }}
+              value={timeZone}
+            >
+              {[...new Set([...timeZones, timeZone])].map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
           </label>
           <div className="dialog-field">
             <span>All-day</span>
@@ -436,6 +511,25 @@ function TimeBlockDialog({
                 ))}
               </div>
             </fieldset>
+          ) : null}
+          {hasAmbiguousDateTime ? (
+            <div className="dialog-wide-field timezone-resolution-panel">
+              <small className="field-helper-text">{dateTimeError}</small>
+              <SegmentedControl
+                ariaLabel="DST occurrence"
+                compact
+                onChange={setAmbiguousTimeChoice}
+                options={[
+                  { value: "earlier", label: "First occurrence" },
+                  { value: "later", label: "Second occurrence" },
+                ]}
+                value={ambiguousTimeChoice ?? ""}
+              />
+            </div>
+          ) : dateTimeError ? (
+            <small className="dialog-wide-field field-helper-text">
+              {dateTimeError}
+            </small>
           ) : null}
           <label>
             <span>Ends</span>

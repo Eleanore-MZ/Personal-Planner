@@ -68,4 +68,6 @@ export type AppSettings = {
   visibleStartHour: number;
   visibleEndHour: number;
   compactTodo: boolean;
+  calendarTimeZones: string[];
+  primaryCalendarTimeZone: string;
 };

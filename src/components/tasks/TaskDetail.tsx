@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Category, Subtask, Task, TimeBlock } from "../../types/domain";
 import { formatDateTimeRange } from "../../utils/date";
+import { useCalendarTimeZone } from "../useCalendarTimeZone";
 import { isAllDayBlock } from "../../utils/calendar";
 import {
   formatMinutes,
@@ -53,6 +54,7 @@ function TaskDetail({
   onOpenFocusPage,
   onOpenTimerPage,
 }: TaskDetailProps) {
+  const timeZone = useCalendarTimeZone();
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -331,7 +333,7 @@ function TaskDetail({
                 <span>
                   {isAllDayBlock(session)
                     ? "All day"
-                    : formatDateTimeRange(session.startsAt, session.endsAt)}
+                    : formatDateTimeRange(session.startsAt, session.endsAt, timeZone)}
                 </span>
               </div>
             ))}
