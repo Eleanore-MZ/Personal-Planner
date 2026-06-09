@@ -779,6 +779,7 @@ function App() {
           k: "tasks",
           s: "stats",
           p: "settings",
+          o: "categories",
         };
         const nextItem = navMap[key];
         if (nextItem) {
@@ -926,6 +927,7 @@ function App() {
             onOpenFocusPage={() => setActiveItem("pomodoro")}
             onOpenTimerPage={() => setActiveItem("timer")}
             onUpdateSettings={handleUpdateSettings}
+            onUpdateStatsGroups={handleUpdateStatsGroups}
           />
           <ResizeHandle
             active={activeResizeSide === "right"}
@@ -938,7 +940,6 @@ function App() {
             activeItem={activeItem}
             activeView={activeView}
             categories={categories}
-            statsGroups={statsGroups}
             compactTaskList={settings.compactTodo}
             tasks={tasks}
             timeBlocks={
@@ -963,7 +964,6 @@ function App() {
             selectedStatsDate={selectedStatsDate}
             selectedTaskId={selectedTaskId}
             statsFilters={statsFilters}
-            onUpdateStatsGroups={handleUpdateStatsGroups}
             onUpdateStatsFilters={setStatsFilters}
             onSelectStatsDate={setSelectedStatsDate}
           />

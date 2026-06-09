@@ -13,7 +13,6 @@ import type {
 import type { CSSProperties } from "react";
 import type {
   Category,
-  StatsGroup,
   Task,
   TimeBlock,
   TimeBlockKind,
@@ -150,7 +149,6 @@ type InspectorPanelProps = {
   activeItem: NavItemId;
   activeView: CalendarView;
   categories: Category[];
-  statsGroups: StatsGroup[];
   compactTaskList: boolean;
   weekStartDay: WeekStartDay;
   onSelectBlock: (blockId?: string, additive?: boolean) => void;
@@ -159,7 +157,6 @@ type InspectorPanelProps = {
   onUpdateTask: (task: Task) => void | Promise<void>;
   onDeleteTask: (taskId: string) => void | Promise<void>;
   onUpdateCategory: (category: Category) => void | Promise<void>;
-  onUpdateStatsGroups: (groups: StatsGroup[]) => void | Promise<void>;
   selectedBlockId?: string;
   selectedBlockIds: string[];
   selectedDate?: Date;
@@ -197,28 +194,11 @@ const toAllDayEndInputValue = (date: Date) => {
   return toDateInputValue(inclusiveEndDate);
 };
 
-const createStatsGroupId = () =>
-  `stats-group-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
 const blockKindOptions: Array<{ value: TimeBlockKind; label: string }> = [
   { value: "event", label: "Event" },
   { value: "task-session", label: "Task" },
   { value: "habit", label: "Habit" },
   { value: "routine", label: "Routine" },
-];
-
-const taskStatusOptions: Array<{ value: Task["status"]; label: string }> = [
-  { value: "todo", label: "Todo" },
-  { value: "in-progress", label: "In progress" },
-  { value: "blocked", label: "Blocked" },
-  { value: "done", label: "Done" },
-  { value: "canceled", label: "Canceled" },
-];
-
-const taskPriorityOptions: Array<{ value: Task["priority"]; label: string }> = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
 ];
 
 const blockOutcomeOptions: Array<{ value: TimeBlockOutcome; label: string }> = [
@@ -255,6 +235,20 @@ const statsBlockSourceOptions: Array<{
   { value: "imported", label: "Imported" },
 ];
 
+const taskStatusOptions: Array<{ value: Task["status"]; label: string }> = [
+  { value: "todo", label: "Todo" },
+  { value: "in-progress", label: "In progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
+  { value: "canceled", label: "Canceled" },
+];
+
+const taskPriorityOptions: Array<{ value: Task["priority"]; label: string }> = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
+
 const sourceLabels: Record<TimeBlock["source"], string> = {
   manual: "Manual",
   pomodoro: "Pomodoro",
@@ -272,7 +266,6 @@ function InspectorPanel({
   activeItem,
   activeView,
   categories,
-  statsGroups,
   compactTaskList,
   weekStartDay,
   onSelectBlock,
@@ -281,7 +274,6 @@ function InspectorPanel({
   onUpdateTask,
   onDeleteTask,
   onUpdateCategory,
-  onUpdateStatsGroups,
   selectedBlockId,
   selectedBlockIds,
   selectedDate,
@@ -309,8 +301,6 @@ function InspectorPanel({
   const [taskTitle, setTaskTitle] = useState("");
   const [taskNotes, setTaskNotes] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
-  const [statsGroupDrafts, setStatsGroupDrafts] = useState<StatsGroup[]>([]);
-  const [isStatsGroupsDialogOpen, setIsStatsGroupsDialogOpen] = useState(false);
   const [collapsedTaskGroups, setCollapsedTaskGroups] = useState<
     Record<string, boolean>
   >({});
@@ -632,9 +622,6 @@ function InspectorPanel({
       : taskSidebarScope === "month"
         ? monthRangeFormatter.format(taskSidebarRange.start)
         : formatSidebarWeekRange(taskSidebarRange.start, taskSidebarRange.end);
-  const assignedStatsCategoryIds = new Set(
-    statsGroupDrafts.flatMap((group) => group.categoryIds),
-  );
   const updateStatsFilter = <Key extends keyof StatsFilters>(
     key: Key,
     value: StatsFilters[Key],
@@ -708,68 +695,6 @@ function InspectorPanel({
     if (selectedTask) {
       void onUpdateTask({ ...selectedTask, ...input });
     }
-  };
-  const updateStatsGroupDraft = (
-    groupId: string,
-    input: Partial<StatsGroup>,
-  ) => {
-    setStatsGroupDrafts((currentGroups) =>
-      currentGroups.map((group) =>
-        group.id === groupId ? { ...group, ...input } : group,
-      ),
-    );
-  };
-  const addStatsGroupDraft = () => {
-    setStatsGroupDrafts((currentGroups) => [
-      ...currentGroups,
-      {
-        id: createStatsGroupId(),
-        name: "New group",
-        color: "#22d3ee",
-        sortOrder: currentGroups.length,
-        countsTowardProductiveTime: true,
-        categoryIds: [],
-      },
-    ]);
-  };
-  const deleteStatsGroupDraft = (groupId: string) => {
-    setStatsGroupDrafts((currentGroups) =>
-      currentGroups
-        .filter((group) => group.id !== groupId)
-        .map((group, index) => ({ ...group, sortOrder: index })),
-    );
-  };
-  const assignCategoryToStatsGroup = (categoryId: string, groupId: string) => {
-    setStatsGroupDrafts((currentGroups) =>
-      currentGroups.map((group) => ({
-        ...group,
-        categoryIds:
-          group.id === groupId
-            ? [...new Set([...group.categoryIds, categoryId])]
-            : group.categoryIds.filter((currentId) => currentId !== categoryId),
-      })),
-    );
-  };
-  const saveStatsGroupDrafts = () => {
-    void onUpdateStatsGroups(
-      statsGroupDrafts.map((group, index) => ({
-        ...group,
-        name: group.name.trim() || "Untitled group",
-        sortOrder: index,
-        countsTowardProductiveTime: group.countsTowardProductiveTime,
-        categoryIds: [...new Set(group.categoryIds)],
-      })),
-    );
-    setIsStatsGroupsDialogOpen(false);
-  };
-  const cancelStatsGroupDrafts = () => {
-    setStatsGroupDrafts(
-      statsGroups.map((group) => ({
-        ...group,
-        categoryIds: [...group.categoryIds],
-      })),
-    );
-    setIsStatsGroupsDialogOpen(false);
   };
   const commitBlockTitle = () => {
     const nextTitle = blockTitle.trim();
@@ -892,15 +817,6 @@ function InspectorPanel({
     setTaskNotes(selectedTask.notes);
     setTaskDueDate(selectedTask.dueDate ? selectedTask.dueDate.slice(0, 10) : "");
   }, [selectedTask]);
-
-  useEffect(() => {
-    setStatsGroupDrafts(
-      statsGroups.map((group) => ({
-        ...group,
-        categoryIds: [...group.categoryIds],
-      })),
-    );
-  }, [statsGroups]);
 
   return (
     <aside className="inspector" aria-label="Inspector panel">
@@ -1190,28 +1106,138 @@ function InspectorPanel({
           </div>
 
           <div className="stats-control-group">
-            <ToggleRow
-              checked={statsFilters.showAllTrackedTime}
-              label="Tracked metric"
-              onChange={(checked) => updateStatsFilter("showAllTrackedTime", checked)}
-            />
-            <div className="detail-meta">
-              {statsFilters.showAllTrackedTime
-                ? "Productive charts are showing tracked time."
-                : "Productive charts exclude non-productive groups."}
+            <div className="mini-label">Filters</div>
+            <label>
+              <span>Category</span>
+              <select
+                onChange={(event) =>
+                  updateStatsFilter("categoryId", event.target.value)
+                }
+                value={statsFilters.categoryId}
+              >
+                <option value="all">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Analyze by</span>
+              <SegmentedControl
+                ariaLabel="Analyze stats by"
+                compact
+                onChange={(analyzeBy) => updateStatsFilter("analyzeBy", analyzeBy)}
+                options={statsAnalyzeByOptions}
+                value={statsFilters.analyzeBy}
+              />
+            </label>
+            <label>
+              <span>Block kind</span>
+              <SegmentedControl
+                ariaLabel="Stats block kind filter"
+                compact
+                onChange={(blockKind) => updateStatsFilter("blockKind", blockKind)}
+                options={statsBlockKindOptions}
+                value={statsFilters.blockKind}
+              />
+            </label>
+            <label>
+              <span>Block outcome</span>
+              <SegmentedControl
+                ariaLabel="Stats block outcome filter"
+                compact
+                onChange={(blockOutcome) =>
+                  updateStatsFilter("blockOutcome", blockOutcome)
+                }
+                options={statsBlockOutcomeOptions}
+                value={statsFilters.blockOutcome}
+              />
+            </label>
+            <label>
+              <span>Block source</span>
+              <SegmentedControl
+                ariaLabel="Stats block source filter"
+                compact
+                onChange={(blockSource) =>
+                  updateStatsFilter("blockSource", blockSource)
+                }
+                options={statsBlockSourceOptions}
+                value={statsFilters.blockSource}
+              />
+            </label>
+          </div>
+
+          <div className="stats-control-group">
+            <div className="mini-label">Display</div>
+            <div className="stats-sidebar-toggle-list">
+              <ToggleRow
+                checked={statsFilters.includeCompletedTasks}
+                label="Include completed tasks"
+                onChange={(checked) =>
+                  updateStatsFilter("includeCompletedTasks", checked)
+                }
+              />
+              <ToggleRow
+                checked={statsFilters.includeAllDayBlocks}
+                label="Include all-day blocks"
+                onChange={(checked) =>
+                  updateStatsFilter("includeAllDayBlocks", checked)
+                }
+              />
+              <ToggleRow
+                checked={statsFilters.includeUncategorized}
+                label="Include uncategorized items"
+                onChange={(checked) =>
+                  updateStatsFilter("includeUncategorized", checked)
+                }
+              />
+              <ToggleRow
+                checked={statsFilters.includeStatsExcludedCategories}
+                label="Include categories excluded from stats"
+                onChange={(checked) =>
+                  updateStatsFilter("includeStatsExcludedCategories", checked)
+                }
+              />
+              <ToggleRow
+                checked={statsFilters.showAllTrackedTime}
+                label="Show tracked time in productive charts"
+                onChange={(checked) =>
+                  updateStatsFilter("showAllTrackedTime", checked)
+                }
+              />
             </div>
           </div>
 
           <div className="stats-control-group">
-            <div className="mini-label">Configuration</div>
+            <div className="mini-label">Year heatmap metric</div>
+            <div className="stats-metric-list" aria-label="Heatmap metric">
+              {statsHeatmapMetrics.map((metric) => (
+                <button
+                  className={statsFilters.heatmapMetric === metric.id ? "active" : ""}
+                  key={metric.id}
+                  onClick={() => updateStatsFilter("heatmapMetric", metric.id)}
+                  type="button"
+                >
+                  {metric.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="stats-control-group">
             <button
               className="toolbar-button"
-              onClick={() => setIsStatsGroupsDialogOpen(true)}
+              onClick={() =>
+                updateStatsFilter("refreshKey", statsFilters.refreshKey + 1)
+              }
               type="button"
             >
-              Customize stats
+              Refresh Stats
             </button>
           </div>
+
         </div>
       ) : activeItem === "calendar" && selectedBlocks.length > 1 ? (
         <div className="inspector-section">
@@ -1734,315 +1760,6 @@ function InspectorPanel({
             </div>
           </div>
         </>
-      ) : null}
-
-      {isStatsGroupsDialogOpen ? (
-        <div className="dialog-backdrop">
-          <div className="fake-dialog stats-groups-dialog">
-            <div className="fake-dialog-header">
-              <div>
-                <div className="panel-kicker">Stats</div>
-                <h2>Customize stats</h2>
-              </div>
-              <button
-                className="toolbar-button"
-                onClick={cancelStatsGroupDrafts}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="stats-groups-dialog-body">
-              <div className="stats-advanced-panel">
-                <div>
-                  <div className="mini-label">Advanced filters</div>
-                  <div className="detail-meta">
-                    Defaults are tuned for the dashboard. Use these only for
-                    focused audits.
-                  </div>
-                </div>
-                <div className="stats-advanced-grid">
-                  <label>
-                    <span>Category</span>
-                    <select
-                      onChange={(event) =>
-                        updateStatsFilter("categoryId", event.target.value)
-                      }
-                      value={statsFilters.categoryId}
-                    >
-                      <option value="all">All categories</option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Analyze by</span>
-                    <SegmentedControl
-                      ariaLabel="Analyze stats by"
-                      compact
-                      onChange={(analyzeBy) =>
-                        updateStatsFilter("analyzeBy", analyzeBy)
-                      }
-                      options={statsAnalyzeByOptions}
-                      value={statsFilters.analyzeBy}
-                    />
-                  </label>
-                  <label>
-                    <span>Block kind</span>
-                    <SegmentedControl
-                      ariaLabel="Stats block kind filter"
-                      compact
-                      onChange={(blockKind) =>
-                        updateStatsFilter("blockKind", blockKind)
-                      }
-                      options={statsBlockKindOptions}
-                      value={statsFilters.blockKind}
-                    />
-                  </label>
-                  <label>
-                    <span>Block outcome</span>
-                    <SegmentedControl
-                      ariaLabel="Stats block outcome filter"
-                      compact
-                      onChange={(blockOutcome) =>
-                        updateStatsFilter("blockOutcome", blockOutcome)
-                      }
-                      options={statsBlockOutcomeOptions}
-                      value={statsFilters.blockOutcome}
-                    />
-                  </label>
-                  <label>
-                    <span>Block source</span>
-                    <SegmentedControl
-                      ariaLabel="Stats block source filter"
-                      compact
-                      onChange={(blockSource) =>
-                        updateStatsFilter("blockSource", blockSource)
-                      }
-                      options={statsBlockSourceOptions}
-                      value={statsFilters.blockSource}
-                    />
-                  </label>
-                  <div className="stats-advanced-toggle-list">
-                    <ToggleRow
-                      checked={statsFilters.includeCompletedTasks}
-                      label="Include completed tasks"
-                      onChange={(checked) =>
-                        updateStatsFilter("includeCompletedTasks", checked)
-                      }
-                    />
-                    <ToggleRow
-                      checked={statsFilters.includeAllDayBlocks}
-                      label="Include all-day blocks"
-                      onChange={(checked) =>
-                        updateStatsFilter("includeAllDayBlocks", checked)
-                      }
-                    />
-                    <ToggleRow
-                      checked={statsFilters.includeUncategorized}
-                      label="Include uncategorized items"
-                      onChange={(checked) =>
-                        updateStatsFilter("includeUncategorized", checked)
-                      }
-                    />
-                    <ToggleRow
-                      checked={statsFilters.includeStatsExcludedCategories}
-                      label="Include categories excluded from stats"
-                      onChange={(checked) =>
-                        updateStatsFilter(
-                          "includeStatsExcludedCategories",
-                          checked,
-                        )
-                      }
-                    />
-                    <ToggleRow
-                      checked={statsFilters.showAllTrackedTime}
-                      label="Show tracked time in productive charts"
-                      onChange={(checked) =>
-                        updateStatsFilter("showAllTrackedTime", checked)
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="stats-advanced-panel">
-                <div>
-                  <div className="mini-label">Year heatmap metric</div>
-                  <div className="detail-meta">
-                    Applies only when Stats is in Year mode.
-                  </div>
-                </div>
-                <div className="stats-metric-list" aria-label="Heatmap metric">
-                  {statsHeatmapMetrics.map((metric) => (
-                    <button
-                      className={
-                        statsFilters.heatmapMetric === metric.id ? "active" : ""
-                      }
-                      key={metric.id}
-                      onClick={() => updateStatsFilter("heatmapMetric", metric.id)}
-                      type="button"
-                    >
-                      {metric.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="stats-advanced-panel">
-                <div>
-                  <div className="mini-label">Actions</div>
-                </div>
-                <div className="stats-nav-grid">
-                  <button
-                    className="toolbar-button"
-                    onClick={() =>
-                      updateStatsFilter("refreshKey", statsFilters.refreshKey + 1)
-                    }
-                    type="button"
-                  >
-                    Refresh
-                  </button>
-                  <button className="toolbar-button" disabled type="button">
-                    Export CSV
-                  </button>
-                </div>
-              </div>
-
-              <div className="stats-group-editor-header">
-                <div>
-                  <div className="mini-label">Groups</div>
-                  <div className="detail-meta">
-                    Productive groups count toward productive time. Other tracked
-                    groups still appear in distribution charts.
-                  </div>
-                </div>
-                <button
-                  className="toolbar-button"
-                  onClick={addStatsGroupDraft}
-                  type="button"
-                >
-                  Add Group
-                </button>
-              </div>
-
-              <div className="stats-group-editor-list">
-                {statsGroupDrafts.map((group) => (
-                  <div className="stats-group-editor-row" key={group.id}>
-                    <input
-                      aria-label={`${group.name} name`}
-                      onChange={(event) =>
-                        updateStatsGroupDraft(group.id, {
-                          name: event.target.value,
-                        })
-                      }
-                      value={group.name}
-                    />
-                    <input
-                      aria-label={`${group.name} color`}
-                      onChange={(event) =>
-                        updateStatsGroupDraft(group.id, {
-                          color: event.target.value,
-                        })
-                      }
-                      type="color"
-                      value={
-                        /^#[0-9a-f]{6}$/i.test(group.color)
-                          ? group.color
-                          : "#22d3ee"
-                      }
-                    />
-                    <button
-                      className={`stats-group-productivity-pill${
-                        group.countsTowardProductiveTime ? " productive" : ""
-                      }`}
-                      onClick={() =>
-                        updateStatsGroupDraft(group.id, {
-                          countsTowardProductiveTime:
-                            !group.countsTowardProductiveTime,
-                        })
-                      }
-                      type="button"
-                    >
-                      {group.countsTowardProductiveTime
-                        ? "Productive"
-                        : "Tracked only"}
-                    </button>
-                    <button
-                      className="toolbar-button danger-action"
-                      onClick={() => deleteStatsGroupDraft(group.id)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="stats-group-assignment-panel">
-                <div>
-                  <div className="mini-label">Category assignments</div>
-                  <div className="detail-meta">
-                    {assignedStatsCategoryIds.size}/{categories.length} assigned.
-                    Unassigned categories appear in Other.
-                  </div>
-                </div>
-                <div className="stats-group-assignment-list">
-                  {categories.map((category) => {
-                    const assignedGroup = statsGroupDrafts.find((group) =>
-                      group.categoryIds.includes(category.id),
-                    );
-                    return (
-                      <label
-                        className="stats-group-assignment-row"
-                        key={category.id}
-                      >
-                        <span>{category.name}</span>
-                        <select
-                          onChange={(event) =>
-                            assignCategoryToStatsGroup(
-                              category.id,
-                              event.target.value,
-                            )
-                          }
-                          value={assignedGroup?.id ?? ""}
-                        >
-                          <option value="">Other</option>
-                          {statsGroupDrafts.map((group) => (
-                            <option key={group.id} value={group.id}>
-                              {group.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="fake-dialog-actions">
-              <button
-                className="toolbar-button"
-                onClick={cancelStatsGroupDrafts}
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                className="toolbar-button primary-action"
-                onClick={saveStatsGroupDrafts}
-                type="button"
-              >
-                Save Groups
-              </button>
-            </div>
-          </div>
-        </div>
       ) : null}
 
       {isEditingBlock && selectedBlock ? (

@@ -62,6 +62,7 @@ type MainPanelProps = {
   onOpenFocusPage: () => void;
   onOpenTimerPage: () => void;
   onUpdateSettings: (settings: AppSettings) => void;
+  onUpdateStatsGroups: (groups: StatsGroup[]) => void | Promise<void>;
 };
 
 function MainPanel({
@@ -99,6 +100,7 @@ function MainPanel({
   onOpenFocusPage,
   onOpenTimerPage,
   onUpdateSettings,
+  onUpdateStatsGroups,
 }: MainPanelProps) {
   const [isTimeBlockDialogOpen, setIsTimeBlockDialogOpen] = useState(false);
   const [draftTimeBlock, setDraftTimeBlock] =
@@ -230,10 +232,12 @@ function MainPanel({
       ) : activeItem === "categories" ? (
         <CategoriesView
           categories={categories}
+          onUpdateStatsGroups={onUpdateStatsGroups}
           onCreateCategory={onCreateCategory}
           onUpdateCategory={onUpdateCategory}
           onDeleteCategory={onDeleteCategory}
           onReorderCategory={onReorderCategory}
+          statsGroups={statsGroups}
         />
       ) : isImplementedCalendarView ? (
         <>

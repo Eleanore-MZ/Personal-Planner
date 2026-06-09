@@ -1,11 +1,14 @@
 import { useState, type DragEvent } from "react";
 import type { Category } from "../../types/domain";
+import type { StatsGroup } from "../../types/domain";
 import type { CreateCategoryInput } from "../../types/plannerApi";
 import { getCategoryAccentColor } from "../../utils/calendar";
 import CategoryDialog from "./CategoryDialog";
+import StatsGroupsConfigPanel from "./StatsGroupsConfigPanel";
 
 type CategoriesViewProps = {
   categories: Category[];
+  statsGroups: StatsGroup[];
   onCreateCategory: (input: CreateCategoryInput) => void | Promise<void>;
   onUpdateCategory: (input: Category) => void | Promise<void>;
   onDeleteCategory: (categoryId: string) => void | Promise<void>;
@@ -14,6 +17,7 @@ type CategoriesViewProps = {
     targetCategoryId: string,
     placement: "before" | "after",
   ) => void;
+  onUpdateStatsGroups: (groups: StatsGroup[]) => void | Promise<void>;
 };
 
 const blockKindLabels: Record<Category["defaultBlockKind"], string> = {
@@ -25,10 +29,12 @@ const blockKindLabels: Record<Category["defaultBlockKind"], string> = {
 
 function CategoriesView({
   categories,
+  statsGroups,
   onCreateCategory,
   onUpdateCategory,
   onDeleteCategory,
   onReorderCategory,
+  onUpdateStatsGroups,
 }: CategoriesViewProps) {
   const [editingCategory, setEditingCategory] = useState<Category | undefined>();
   const [isCreating, setIsCreating] = useState(false);
@@ -54,9 +60,9 @@ function CategoriesView({
     <div className="categories-view">
       <section className="category-create-panel">
         <div>
-          <div className="panel-kicker">Persistent categories</div>
+          <div className="panel-kicker">Config</div>
           <h2>Categories</h2>
-          <p>Manage colors, defaults, and Stats inclusion.</p>
+          <p>Manage categories, defaults, and analytics behavior.</p>
         </div>
         <div className="category-create-form compact-action-form">
           <button
@@ -178,6 +184,12 @@ function CategoriesView({
           onUpdateCategory={onUpdateCategory}
         />
       ) : null}
+
+      <StatsGroupsConfigPanel
+        categories={categories}
+        onUpdateStatsGroups={onUpdateStatsGroups}
+        statsGroups={statsGroups}
+      />
     </div>
   );
 }

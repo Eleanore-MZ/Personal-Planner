@@ -55,10 +55,10 @@ export const sectionPlaceholders: Record<
       "Review your time, tasks, and routines.",
   },
   categories: {
-    title: "Categories",
-    kicker: "Color system",
+    title: "Config",
+    kicker: "Workspace setup",
     description:
-      "Manage category colors, defaults, and Stats inclusion.",
+      "Manage categories, analytics groups, and Stats defaults.",
   },
   settings: {
     title: "Settings",

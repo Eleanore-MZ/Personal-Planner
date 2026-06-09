@@ -6,7 +6,7 @@ export const navItems: Array<{ id: NavItemId; label: string }> = [
   { id: "pomodoro", label: "Focus" },
   { id: "timer", label: "Timer" },
   { id: "stats", label: "Stats" },
-  { id: "categories", label: "Categories" },
+  { id: "categories", label: "Config" },
 ];
 
 export const calendarViews: Array<{ id: CalendarView; label: string }> = [

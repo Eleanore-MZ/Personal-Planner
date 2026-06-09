@@ -38,6 +38,11 @@ const commands: Array<{
     action: ({ onSelectNav }) => onSelectNav("stats"),
   },
   {
+    label: "Go to Config",
+    hint: "G then O",
+    action: ({ onSelectNav }) => onSelectNav("categories"),
+  },
+  {
     label: "Show Today",
     hint: "T",
     action: ({ onToday }) => onToday(),

@@ -1,9 +1,14 @@
+import { type KeyboardEvent, useState } from "react";
 import type { PressureDatum } from "../../utils/stats";
+import { isSameCalendarDay } from "../../utils/calendar";
+import { formatDate } from "../../utils/date";
 
 type PressureLevelChartProps = {
   ariaLabel?: string;
   data: PressureDatum[];
   emptyMessage?: string;
+  onSelectDate?: (date: Date) => void;
+  selectedDate?: Date;
   xAxisMode?: "date" | "month";
 };
 
@@ -16,10 +21,6 @@ const chartPadding = {
   top: 16,
 };
 const monthFormatter = new Intl.DateTimeFormat("en-US", { month: "short" });
-const dayFormatter = new Intl.DateTimeFormat("en-US", {
-  day: "numeric",
-  month: "short",
-});
 const referencePressure = 100;
 const singletonSegmentHalfWidth = 4;
 
@@ -167,8 +168,11 @@ function PressureLevelChart({
   ariaLabel = "Pressure index by day",
   data,
   emptyMessage = "No task pressure data for this period.",
+  onSelectDate,
+  selectedDate,
   xAxisMode = "month",
 }: PressureLevelChartProps) {
+  const [previewDateIso, setPreviewDateIso] = useState<string | null>(null);
   const visiblePressureValues = data.reduce<number[]>((values, day) => {
     if (day.rawPressure !== null) {
       values.push(day.rawPressure);
@@ -215,6 +219,33 @@ function PressureLevelChart({
         })
       : points.filter((point) => new Date(point.date).getDate() === 1);
   const hoverBandWidth = plotWidth / Math.max(points.length, 1);
+  const selectablePoints = points.filter(hasPressureValue);
+  const previewPoint = previewDateIso
+    ? selectablePoints.find((point) => point.date === previewDateIso) ?? null
+    : null;
+  const selectedPoint = selectedDate
+    ? selectablePoints.find((point) =>
+        isSameCalendarDay(selectedDate, new Date(point.date)),
+      ) ?? null
+    : null;
+  const activePoint = previewPoint ?? selectedPoint;
+  const activePointMode = previewPoint ? "Preview day" : "Selected day";
+
+  const selectPoint = (point: ChartPoint) => {
+    onSelectDate?.(new Date(point.date));
+  };
+
+  const handlePointKeyDown = (
+    event: KeyboardEvent<SVGRectElement>,
+    point: ChartPoint,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    selectPoint(point);
+  };
 
   return (
     <section className="stats-card pressure-level-card">
@@ -309,6 +340,21 @@ function PressureLevelChart({
                 key={`line-${segment[0].date}-${segment[segment.length - 1].date}`}
               />
             ))}
+            {activePoint ? (
+              <g
+                className={`pressure-selection-marker${
+                  previewPoint ? " preview" : " selected"
+                }`}
+              >
+                <line
+                  x1={activePoint.x}
+                  x2={activePoint.x}
+                  y1={chartPadding.top}
+                  y2={baselineY}
+                />
+                <circle cx={activePoint.x} cy={activePoint.y} r="5" />
+              </g>
+            ) : null}
             {points
               .filter(
                 (point): point is ChartPoint =>
@@ -341,31 +387,55 @@ function PressureLevelChart({
               </text>
             ))}
 
-            {points.filter(hasPressureValue).map((point) => (
-              <rect
-                className="pressure-hover-target"
-                height={plotHeight}
-                key={point.date}
-                width={hoverBandWidth}
-                x={point.x - hoverBandWidth / 2}
-                y={chartPadding.top}
-              >
-                <title>
-                  {dayFormatter.format(new Date(point.date))}: smoothed pressure index{" "}
-                  {point.smoothedPressure.toFixed(0)}, raw pressure index{" "}
-                  {point.rawPressure.toFixed(0)}, due pressure{" "}
-                  {point.duePressure.toFixed(1)}, due points{" "}
-                  {point.duePoints.toFixed(1)}, exam pressure{" "}
-                  {point.examPressure.toFixed(1)}, upcoming exams within 3 days{" "}
-                  {point.examsWithin3DaysCount}, exams today{" "}
-                  {point.examsOnDayCount}, task work{" "}
-                  {point.taskWorkHours.toFixed(1)}h, work points{" "}
-                  {point.workPoints.toFixed(1)}, tasks due within +/-3 days{" "}
-                  {point.tasksDueWithin3DaysCount}
-                </title>
-              </rect>
-            ))}
+            {selectablePoints.map((point) => {
+              const isSelected = selectedPoint?.date === point.date;
+              const isPreview = previewPoint?.date === point.date;
+              const pointLabel = `${formatDate(point.date)}: Pressure index ${point.smoothedPressure.toFixed(
+                0,
+              )}`;
+
+              return (
+                <rect
+                  aria-label={pointLabel}
+                  aria-pressed={isSelected}
+                  className={`pressure-hover-target${
+                    isSelected ? " selected" : ""
+                  }${isPreview ? " preview" : ""}`}
+                  height={plotHeight}
+                  key={point.date}
+                  onBlur={() => setPreviewDateIso(null)}
+                  onClick={() => selectPoint(point)}
+                  onFocus={() => setPreviewDateIso(point.date)}
+                  onKeyDown={(event) => handlePointKeyDown(event, point)}
+                  onMouseEnter={() => setPreviewDateIso(point.date)}
+                  onMouseLeave={() => setPreviewDateIso(null)}
+                  role="button"
+                  tabIndex={0}
+                  width={hoverBandWidth}
+                  x={point.x - hoverBandWidth / 2}
+                  y={chartPadding.top}
+                >
+                  <title>{pointLabel}</title>
+                </rect>
+              );
+            })}
           </svg>
+          <div className="pressure-selection-readout">
+            {activePoint ? (
+              <>
+                <div>
+                  <span>{activePointMode}</span>
+                  <strong>{formatDate(activePoint.date)}</strong>
+                </div>
+                <div>
+                  <span>Pressure index</span>
+                  <strong>{activePoint.smoothedPressure.toFixed(0)}</strong>
+                </div>
+              </>
+            ) : (
+              <span>Hover or select a day.</span>
+            )}
+          </div>
         </div>
       ) : (
         <div className="empty-state">

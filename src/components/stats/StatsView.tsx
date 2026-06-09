@@ -1017,6 +1017,8 @@ function StatsView({
             ariaLabel="Month pressure index by day"
             data={monthPressureData}
             emptyMessage="No task pressure data for this month."
+            onSelectDate={onSelectStatsDate}
+            selectedDate={selectedStatsDate}
             xAxisMode="date"
           />
         </div>
@@ -1098,6 +1100,8 @@ function StatsView({
           ariaLabel="Year pressure index by day"
           data={yearPressureData}
           emptyMessage="No task pressure data for this year."
+          onSelectDate={onSelectStatsDate}
+          selectedDate={selectedStatsDate}
         />
         <YearHeatmap
           data={heatmapData}
