@@ -100,11 +100,15 @@ export type TimeOfDayDatum = {
 };
 
 export type WeekRhythmSegment = {
+  blockTitle: string;
+  categoryName: string;
   startMinute: number;
   endMinute: number;
   color: string;
+  durationMinutes: number;
   groupName: string;
   lane: number;
+  timeRange: string;
   tooltip: string;
 };
 
@@ -974,16 +978,22 @@ export function calculateWeekRhythm(
       const timeRange = `${formatMinuteLabel(startMinute)}-${formatMinuteLabel(
         endMinute,
       )}`;
+      const categoryName = category?.name ?? "Uncategorized";
+      const durationMinutes = Math.max((overlapEnd - overlapStart) / 60000, 0);
 
       return [
         {
+          blockTitle: block.title,
+          categoryName,
           startMinute,
           endMinute,
           color: group.color,
+          durationMinutes,
           groupName: group.name,
+          timeRange,
           tooltip: `${rhythmWeekdayFormatter.format(dayStart)} ${timeRange}\nGroup: ${
             group.name
-          }\nCategory: ${category?.name ?? "Uncategorized"}\nBlock: ${block.title}`,
+          }\nCategory: ${categoryName}\nBlock: ${block.title}`,
         },
       ];
     });
@@ -1000,11 +1010,15 @@ export function calculateWeekRhythm(
         laneEnds[laneIndex] = interval.endMinute;
 
         return {
+          blockTitle: interval.blockTitle,
+          categoryName: interval.categoryName,
           startMinute: interval.startMinute,
           endMinute: interval.endMinute,
           color: interval.color,
+          durationMinutes: interval.durationMinutes,
           groupName: interval.groupName,
           lane: laneIndex,
+          timeRange: interval.timeRange,
           tooltip: interval.tooltip,
         };
       });

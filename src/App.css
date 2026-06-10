@@ -4454,10 +4454,103 @@
 
 .week-rhythm-segment {
   position: absolute;
+  display: block;
+  --week-rhythm-segment-color: var(--color-accent);
+  box-sizing: border-box;
   height: 5px;
   min-width: 1px;
+  border: 0;
+  border-radius: 0;
   opacity: 1;
+  padding: 0;
+  line-height: 0;
   box-shadow: 0 0 12px rgba(34, 211, 238, 0.1);
+  cursor: pointer;
+  appearance: none;
+}
+
+.week-rhythm-segment:hover,
+.week-rhythm-segment.preview {
+  box-shadow:
+    inset 0 0 0 1px color-mix(
+      in srgb,
+      var(--week-rhythm-segment-color) 64%,
+      white 36%
+    ),
+    0 0 14px color-mix(
+      in srgb,
+      var(--week-rhythm-segment-color) 28%,
+      transparent
+    );
+}
+
+.week-rhythm-segment.selected {
+  box-shadow:
+    inset 0 0 0 1px var(--week-rhythm-segment-color),
+    0 0 16px color-mix(
+      in srgb,
+      var(--week-rhythm-segment-color) 34%,
+      transparent
+    );
+}
+
+.week-rhythm-segment.selected::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  pointer-events: none;
+  width: 2px;
+  background: var(--week-rhythm-segment-color);
+  transform: translateX(-50%);
+}
+
+.week-rhythm-segment:focus-visible {
+  outline: 1px solid var(--week-rhythm-segment-color);
+  outline-offset: 2px;
+}
+
+.week-rhythm-selection-readout {
+  display: grid;
+  grid-template-columns: 1.1fr minmax(0, 1.4fr) repeat(3, minmax(90px, 0.8fr));
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  border: 1px solid var(--color-border-muted);
+  background: rgba(13, 17, 23, 0.58);
+  padding: 8px 10px;
+}
+
+.week-rhythm-selection-readout div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.week-rhythm-selection-readout span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.week-rhythm-selection-empty {
+  grid-column: 1 / -1;
+  text-transform: none;
+}
+
+.week-rhythm-selection-readout strong {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--color-text-strong);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stats-detail-card {
@@ -5213,6 +5306,10 @@
   .stats-heatmap-card,
   .week-rhythm-card {
     grid-column: auto;
+  }
+
+  .week-rhythm-selection-readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .time-groups-ring-layout {
