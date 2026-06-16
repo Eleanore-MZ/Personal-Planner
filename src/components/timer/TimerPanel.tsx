@@ -1,15 +1,26 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { Category, Task, TimeBlockKind } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import { getCategoryColorValues } from "../../utils/calendar";
 import { isTaskComplete, orderTasksByDueDate } from "../../utils/tasks";
+import type { QuickBlockPreset } from "../quickBlocks/quickBlockPresets";
 import { SegmentedControl } from "../ui/ChoiceControls";
 
 type TimerPanelProps = {
   categories: Category[];
+  pendingQuickBlockPreset?: QuickBlockPreset;
   selectedTask?: Task;
   tasks: Task[];
   onCompleteSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
+  onQuickBlockDisabledChange?: (disabled: boolean) => void;
+  onQuickBlockPresetApplied?: () => void;
 };
 
 type TimerState = "idle" | "running" | "confirm-short" | "saved";
@@ -152,9 +163,12 @@ const getSessionKind = (
 
 function TimerPanel({
   categories,
+  pendingQuickBlockPreset,
   selectedTask,
   tasks,
   onCompleteSession,
+  onQuickBlockDisabledChange,
+  onQuickBlockPresetApplied,
 }: TimerPanelProps) {
   const openTasks = useMemo(
     () => orderTasksByDueDate(tasks.filter((task) => !isTaskComplete(task))),
@@ -195,6 +209,20 @@ function TimerPanel({
   const visibleSessionTitle = activeSession?.title ?? sessionTitle;
   const canStart = Boolean(activeTask || selectedCategoryId);
   const hasActiveSession = timerState === "running" || timerState === "confirm-short";
+
+  const applyQuickBlockPreset = useCallback(
+    (preset: QuickBlockPreset) => {
+      if (hasActiveSession) {
+        return;
+      }
+
+      setSelectedTaskId("");
+      setCustomTimerTitle(preset.title);
+      setSelectedCategoryId(preset.categoryId);
+      setSelectedBlockKind(preset.kind);
+    },
+    [hasActiveSession],
+  );
 
   useEffect(() => {
     if (hasRestoredSessionRef.current) {
@@ -253,6 +281,23 @@ function TimerPanel({
     const intervalId = window.setInterval(updateElapsed, 1000);
     return () => window.clearInterval(intervalId);
   }, [activeSession, timerState]);
+
+  useEffect(() => {
+    onQuickBlockDisabledChange?.(hasActiveSession);
+  }, [hasActiveSession, onQuickBlockDisabledChange]);
+
+  useEffect(() => {
+    if (!pendingQuickBlockPreset) {
+      return;
+    }
+
+    applyQuickBlockPreset(pendingQuickBlockPreset);
+    onQuickBlockPresetApplied?.();
+  }, [
+    applyQuickBlockPreset,
+    onQuickBlockPresetApplied,
+    pendingQuickBlockPreset,
+  ]);
 
   const startTimer = () => {
     if (!canStart) {

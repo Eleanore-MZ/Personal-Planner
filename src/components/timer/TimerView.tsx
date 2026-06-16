@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import type { Category, Task, TimeBlock } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import { getCategoryColorValues } from "../../utils/calendar";
@@ -8,6 +8,8 @@ import {
   isTaskComplete,
   orderTasksByDueDate,
 } from "../../utils/tasks";
+import QuickBlockPicker from "../quickBlocks/QuickBlockPicker";
+import type { QuickBlockPreset } from "../quickBlocks/quickBlockPresets";
 import TimerPanel from "./TimerPanel";
 
 type TimerViewProps = {
@@ -32,6 +34,18 @@ function TimerView({
   const openTasks = orderTasksByDueDate(
     tasks.filter((task) => !isTaskComplete(task)),
   );
+  const [pendingQuickBlockPreset, setPendingQuickBlockPreset] =
+    useState<QuickBlockPreset>();
+  const [areQuickBlocksDisabled, setAreQuickBlocksDisabled] = useState(false);
+  const applyQuickBlockPreset = useCallback((preset: QuickBlockPreset) => {
+    setPendingQuickBlockPreset(preset);
+  }, []);
+  const clearPendingQuickBlockPreset = useCallback(() => {
+    setPendingQuickBlockPreset(undefined);
+  }, []);
+  const updateQuickBlockDisabled = useCallback((disabled: boolean) => {
+    setAreQuickBlocksDisabled(disabled);
+  }, []);
 
   return (
     <div className="pomodoro-view timer-view">
@@ -39,6 +53,9 @@ function TimerView({
         <TimerPanel
           categories={categories}
           onCompleteSession={onCompleteSession}
+          onQuickBlockDisabledChange={updateQuickBlockDisabled}
+          onQuickBlockPresetApplied={clearPendingQuickBlockPreset}
+          pendingQuickBlockPreset={pendingQuickBlockPreset}
           selectedTask={selectedTask}
           tasks={tasks}
         />
@@ -100,6 +117,14 @@ function TimerView({
           </div>
         </section>
       </aside>
+
+      <section className="pomodoro-quick-block-row">
+        <QuickBlockPicker
+          categories={categories}
+          disabled={areQuickBlocksDisabled}
+          onApplyPreset={applyQuickBlockPreset}
+        />
+      </section>
     </div>
   );
 }

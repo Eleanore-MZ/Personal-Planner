@@ -1,16 +1,27 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { Category, Task, TimeBlockKind } from "../../types/domain";
 import type { CreateTimeBlockInput } from "../../types/plannerApi";
 import { getCategoryColorValues } from "../../utils/calendar";
 import { isTaskComplete, orderTasksByDueDate } from "../../utils/tasks";
+import type { QuickBlockPreset } from "../quickBlocks/quickBlockPresets";
 import { SegmentedControl, ToggleRow } from "../ui/ChoiceControls";
 
 type PomodoroPanelProps = {
   categories: Category[];
+  pendingQuickBlockPreset?: QuickBlockPreset;
   selectedTask?: Task;
   tasks: Task[];
   onCompleteSession: (timeBlock: CreateTimeBlockInput) => void | Promise<void>;
   onMarkTaskDone: (taskId: string) => void | Promise<void>;
+  onQuickBlockDisabledChange?: (disabled: boolean) => void;
+  onQuickBlockPresetApplied?: () => void;
 };
 
 type TimerState = "idle" | "running" | "paused" | "completed";
@@ -314,10 +325,13 @@ const showCompletionNotification = (title: string, body: string) => {
 
 function PomodoroPanel({
   categories,
+  pendingQuickBlockPreset,
   selectedTask,
   tasks,
   onCompleteSession,
   onMarkTaskDone,
+  onQuickBlockDisabledChange,
+  onQuickBlockPresetApplied,
 }: PomodoroPanelProps) {
   const openTasks = useMemo(
     () => orderTasksByDueDate(tasks.filter((task) => !isTaskComplete(task))),
@@ -443,7 +457,21 @@ function PomodoroPanel({
         ? "Paused"
       : timerState === "idle"
         ? "Ready"
-        : "Focusing";
+      : "Focusing";
+
+  const applyQuickBlockPreset = useCallback(
+    (preset: QuickBlockPreset) => {
+      if (hasLockedTimer) {
+        return;
+      }
+
+      setSelectedTaskId("");
+      setCustomFocusTitle(preset.title);
+      setSelectedCategoryId(preset.categoryId);
+      setSelectedBlockKind(preset.kind);
+    },
+    [hasLockedTimer],
+  );
 
   useEffect(() => {
     if (hasRestoredSessionRef.current) {
@@ -658,6 +686,23 @@ function PomodoroPanel({
     breakTimerState,
     notificationEnabled,
     soundEnabled,
+  ]);
+
+  useEffect(() => {
+    onQuickBlockDisabledChange?.(hasLockedTimer);
+  }, [hasLockedTimer, onQuickBlockDisabledChange]);
+
+  useEffect(() => {
+    if (!pendingQuickBlockPreset) {
+      return;
+    }
+
+    applyQuickBlockPreset(pendingQuickBlockPreset);
+    onQuickBlockPresetApplied?.();
+  }, [
+    applyQuickBlockPreset,
+    onQuickBlockPresetApplied,
+    pendingQuickBlockPreset,
   ]);
 
   const updateSoundPreference = (enabled: boolean) => {
@@ -1134,6 +1179,7 @@ function PomodoroPanel({
           </div>
         </div>
       </div>
+
       {timerState === "paused" ? (
         <div className="focus-status-indicator">Paused</div>
       ) : null}

@@ -1,26 +1,29 @@
-import { app as N, ipcMain as m, BrowserWindow as w } from "electron";
-import { fileURLToPath as x } from "node:url";
-import _ from "node:path";
-import H from "better-sqlite3";
-function u(e, t) {
-  const r = new Date(e);
-  return r.setDate(r.getDate() + t), r;
+import { app, ipcMain, BrowserWindow } from "electron";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import Database from "better-sqlite3";
+function addDays(date, days) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
 }
-function T(e, t, r = 0) {
-  const o = new Date(e);
-  return o.setHours(t, r, 0, 0), o;
+function atTime(date, hour, minute = 0) {
+  const nextDate = new Date(date);
+  nextDate.setHours(hour, minute, 0, 0);
+  return nextDate;
 }
-const c = /* @__PURE__ */ new Date();
-c.setHours(0, 0, 0, 0);
-const s = (e) => e.toISOString(), K = [
+const today = /* @__PURE__ */ new Date();
+today.setHours(0, 0, 0, 0);
+const toIso = (date) => date.toISOString();
+const sampleCategories = [
   {
     id: "cat-work",
     name: "Work",
     color: "cyan",
     description: "Focused project work and meetings.",
     defaultBlockKind: "event",
-    hiddenFromCalendar: !1,
-    includeInStatsByDefault: !0
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-personal",
@@ -28,8 +31,8 @@ const s = (e) => e.toISOString(), K = [
     color: "green",
     description: "Home, errands, and life admin.",
     defaultBlockKind: "event",
-    hiddenFromCalendar: !1,
-    includeInStatsByDefault: !0
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-health",
@@ -37,8 +40,8 @@ const s = (e) => e.toISOString(), K = [
     color: "pink",
     description: "Exercise, meals, and recovery routines.",
     defaultBlockKind: "event",
-    hiddenFromCalendar: !1,
-    includeInStatsByDefault: !0
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-learning",
@@ -46,8 +49,8 @@ const s = (e) => e.toISOString(), K = [
     color: "purple",
     description: "Classes, reading, and skill practice.",
     defaultBlockKind: "event",
-    hiddenFromCalendar: !1,
-    includeInStatsByDefault: !0
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   },
   {
     id: "cat-finance",
@@ -55,18 +58,19 @@ const s = (e) => e.toISOString(), K = [
     color: "yellow",
     description: "Bills, budgets, and planning.",
     defaultBlockKind: "event",
-    hiddenFromCalendar: !1,
-    includeInStatsByDefault: !0
+    hiddenFromCalendar: false,
+    includeInStatsByDefault: true
   }
-], Y = [
+];
+const sampleTimeBlocks = [
   {
     id: "block-week-planning",
     title: "Weekly planning pass",
     notes: "Sketch priorities and choose focus blocks.",
     categoryId: "cat-work",
     taskId: "task-plan-week",
-    startsAt: s(T(c, 9)),
-    endsAt: s(T(c, 10)),
+    startsAt: toIso(atTime(today, 9)),
+    endsAt: toIso(atTime(today, 10)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -77,8 +81,8 @@ const s = (e) => e.toISOString(), K = [
     notes: "Clear urgent replies and archive stale threads.",
     categoryId: "cat-work",
     taskId: "task-send-proposal",
-    startsAt: s(T(c, 10, 30)),
-    endsAt: s(T(c, 11)),
+    startsAt: toIso(atTime(today, 10, 30)),
+    endsAt: toIso(atTime(today, 11)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -89,8 +93,8 @@ const s = (e) => e.toISOString(), K = [
     notes: "Prepare notes for the upcoming app shell review.",
     categoryId: "cat-work",
     taskId: "task-review-shell",
-    startsAt: s(T(u(c, 1), 13)),
-    endsAt: s(T(u(c, 1), 14, 30)),
+    startsAt: toIso(atTime(addDays(today, 1), 13)),
+    endsAt: toIso(atTime(addDays(today, 1), 14, 30)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -101,8 +105,8 @@ const s = (e) => e.toISOString(), K = [
     notes: "Pick up ingredients and pantry basics.",
     categoryId: "cat-personal",
     taskId: "task-grocery-list",
-    startsAt: s(T(u(c, 1), 17, 30)),
-    endsAt: s(T(u(c, 1), 18, 15)),
+    startsAt: toIso(atTime(addDays(today, 1), 17, 30)),
+    endsAt: toIso(atTime(addDays(today, 1), 18, 15)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -112,8 +116,8 @@ const s = (e) => e.toISOString(), K = [
     title: "Workout",
     notes: "Light cardio and mobility.",
     categoryId: "cat-health",
-    startsAt: s(T(u(c, 2), 7)),
-    endsAt: s(T(u(c, 2), 7, 45)),
+    startsAt: toIso(atTime(addDays(today, 2), 7)),
+    endsAt: toIso(atTime(addDays(today, 2), 7, 45)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -124,8 +128,8 @@ const s = (e) => e.toISOString(), K = [
     notes: "Review stricter domain modeling patterns.",
     categoryId: "cat-learning",
     taskId: "task-read-typescript",
-    startsAt: s(T(u(c, 3), 19)),
-    endsAt: s(T(u(c, 3), 20)),
+    startsAt: toIso(atTime(addDays(today, 3), 19)),
+    endsAt: toIso(atTime(addDays(today, 3), 20)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -136,8 +140,8 @@ const s = (e) => e.toISOString(), K = [
     notes: "Check recurring costs and savings targets.",
     categoryId: "cat-finance",
     taskId: "task-budget-review",
-    startsAt: s(T(u(c, 5), 11)),
-    endsAt: s(T(u(c, 5), 12)),
+    startsAt: toIso(atTime(addDays(today, 5), 11)),
+    endsAt: toIso(atTime(addDays(today, 5), 12)),
     outcome: "active",
     kind: "event",
     source: "manual"
@@ -147,13 +151,14 @@ const s = (e) => e.toISOString(), K = [
     title: "Open planning buffer",
     notes: "Flexible time for overflow items.",
     categoryId: "cat-personal",
-    startsAt: s(T(u(c, 6), 15)),
-    endsAt: s(T(u(c, 6), 16)),
+    startsAt: toIso(atTime(addDays(today, 6), 15)),
+    endsAt: toIso(atTime(addDays(today, 6), 16)),
     outcome: "active",
     kind: "event",
     source: "manual"
   }
-], q = [
+];
+const sampleTasks = [
   {
     id: "task-renew-license",
     title: "Renew software license",
@@ -161,7 +166,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-work",
     status: "todo",
     priority: "high",
-    dueDate: s(u(c, -2))
+    dueDate: toIso(addDays(today, -2))
   },
   {
     id: "task-plan-week",
@@ -170,12 +175,12 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-work",
     status: "in-progress",
     priority: "high",
-    dueDate: s(c),
+    dueDate: toIso(today),
     plannedTimeBlockId: "block-week-planning",
     subtasks: [
-      { id: "subtask-review-calendar", title: "Review calendar", completed: !0 },
-      { id: "subtask-pick-focus", title: "Pick three focus items", completed: !1 },
-      { id: "subtask-block-time", title: "Block deep work time", completed: !1 }
+      { id: "subtask-review-calendar", title: "Review calendar", completed: true },
+      { id: "subtask-pick-focus", title: "Pick three focus items", completed: false },
+      { id: "subtask-block-time", title: "Block deep work time", completed: false }
     ]
   },
   {
@@ -185,10 +190,10 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-personal",
     status: "todo",
     priority: "medium",
-    dueDate: s(u(c, 1)),
+    dueDate: toIso(addDays(today, 1)),
     plannedTimeBlockId: "block-grocery",
     subtasks: [
-      { id: "subtask-check-pantry", title: "Check pantry staples", completed: !1 }
+      { id: "subtask-check-pantry", title: "Check pantry staples", completed: false }
     ]
   },
   {
@@ -198,7 +203,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-work",
     status: "todo",
     priority: "medium",
-    dueDate: s(u(c, 3)),
+    dueDate: toIso(addDays(today, 3)),
     plannedTimeBlockId: "block-design-review"
   },
   {
@@ -208,7 +213,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-learning",
     status: "todo",
     priority: "low",
-    dueDate: s(u(c, 4)),
+    dueDate: toIso(addDays(today, 4)),
     plannedTimeBlockId: "block-reading"
   },
   {
@@ -218,7 +223,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-finance",
     status: "todo",
     priority: "medium",
-    dueDate: s(u(c, 7)),
+    dueDate: toIso(addDays(today, 7)),
     plannedTimeBlockId: "block-budget"
   },
   {
@@ -228,7 +233,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-work",
     status: "todo",
     priority: "high",
-    dueDate: s(u(c, 2)),
+    dueDate: toIso(addDays(today, 2)),
     plannedTimeBlockId: "block-email"
   },
   {
@@ -238,7 +243,7 @@ const s = (e) => e.toISOString(), K = [
     categoryId: "cat-personal",
     status: "todo",
     priority: "low",
-    dueDate: s(u(c, 14))
+    dueDate: toIso(addDays(today, 14))
   },
   {
     id: "task-capture-ideas",
@@ -249,32 +254,49 @@ const s = (e) => e.toISOString(), K = [
     priority: "low"
   }
 ];
-let g;
-const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V = (e) => {
-  if (e)
-    try {
-      const t = JSON.parse(e);
-      if (Array.isArray(t) && t.every((r) => Number.isInteger(r) && r >= 0 && r <= 6))
-        return t;
-    } catch {
-      return;
+let db;
+const createId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const parseRecurrenceWeekdays = (value) => {
+  if (!value) {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6)) {
+      return parsed;
     }
-}, h = (e) => e && e.length > 0 ? JSON.stringify(e) : null, z = (e) => {
-  if (e)
-    try {
-      const t = JSON.parse(e);
-      if (Array.isArray(t) && t.every((r) => typeof r == "string"))
-        return t;
-    } catch {
-      return;
+  } catch {
+    return void 0;
+  }
+  return void 0;
+};
+const serializeRecurrenceWeekdays = (weekdays) => weekdays && weekdays.length > 0 ? JSON.stringify(weekdays) : null;
+const parseRecurrenceExceptions = (value) => {
+  if (!value) {
+    return void 0;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.every((date) => typeof date === "string")) {
+      return parsed;
     }
-}, S = (e) => e && e.length > 0 ? JSON.stringify([...new Set(e)].sort()) : null, Z = (e, t) => e === "never" && t ? "on" : e ?? (t ? "on" : "never"), j = ["active", "abandoned"], $ = ["event", "task-session", "habit", "routine"], J = ["manual", "pomodoro", "timer", "generated", "imported"], Q = [
+  } catch {
+    return void 0;
+  }
+  return void 0;
+};
+const serializeRecurrenceExceptions = (exceptions) => exceptions && exceptions.length > 0 ? JSON.stringify([...new Set(exceptions)].sort()) : null;
+const normalizeRecurrenceEndMode = (mode, endDate) => mode === "never" && endDate ? "on" : mode ?? (endDate ? "on" : "never");
+const timeBlockOutcomes = ["active", "abandoned"];
+const timeBlockKinds = ["event", "task-session", "habit", "routine"];
+const timeBlockSources = ["manual", "pomodoro", "timer", "generated", "imported"];
+const defaultStatsGroups = [
   {
     id: "stats-group-work-study",
     name: "Work / Study",
     color: "#60a5fa",
     sortOrder: 0,
-    countsTowardProductiveTime: !0,
+    countsTowardProductiveTime: true,
     categoryIds: []
   },
   {
@@ -282,7 +304,7 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Entertainment",
     color: "#a78bfa",
     sortOrder: 1,
-    countsTowardProductiveTime: !0,
+    countsTowardProductiveTime: true,
     categoryIds: []
   },
   {
@@ -290,7 +312,7 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Sleep / Meals",
     color: "#f59e0b",
     sortOrder: 2,
-    countsTowardProductiveTime: !1,
+    countsTowardProductiveTime: false,
     categoryIds: []
   },
   {
@@ -298,7 +320,7 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Rest / Recovery",
     color: "#34d399",
     sortOrder: 3,
-    countsTowardProductiveTime: !1,
+    countsTowardProductiveTime: false,
     categoryIds: []
   },
   {
@@ -306,7 +328,7 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Creative",
     color: "#f472b6",
     sortOrder: 4,
-    countsTowardProductiveTime: !0,
+    countsTowardProductiveTime: true,
     categoryIds: []
   },
   {
@@ -314,7 +336,7 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Health",
     color: "#f87171",
     sortOrder: 5,
-    countsTowardProductiveTime: !0,
+    countsTowardProductiveTime: true,
     categoryIds: []
   },
   {
@@ -322,10 +344,11 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     name: "Other",
     color: "#94a3b8",
     sortOrder: 6,
-    countsTowardProductiveTime: !0,
+    countsTowardProductiveTime: true,
     categoryIds: []
   }
-], ee = [
+];
+const defaultStatsGroupMatchers = [
   {
     id: "stats-group-work-study",
     matcher: /work|job|study|school|class|course|learning|reading|research|meeting|project|lab/
@@ -350,18 +373,38 @@ const A = (e) => `${e}-${Date.now()}-${Math.random().toString(16).slice(2)}`, V 
     id: "stats-group-health",
     matcher: /health|gym|workout|exercise|fitness|doctor|medical|therapy/
   }
-], te = (e) => e === "skipped" || e === "canceled" ? "abandoned" : "active", U = (e) => e === "abandoned" ? "skipped" : "planned", y = (e, t) => e && j.includes(e) ? e : te(t), k = (e) => e && $.includes(e) ? e : "event", f = (e) => e && J.includes(e) ? e : "manual";
-function re() {
-  const e = _.join(N.getPath("userData"), "planner.sqlite3");
-  g = new H(e), g.pragma("journal_mode = WAL"), ne(g), ae(g), ce(g);
+];
+const mapStatusToOutcome = (status) => {
+  if (status === "skipped" || status === "canceled") {
+    return "abandoned";
+  }
+  return "active";
+};
+const mapOutcomeToStatus = (outcome) => {
+  if (outcome === "abandoned") {
+    return "skipped";
+  }
+  return "planned";
+};
+const normalizeTimeBlockOutcome = (outcome, legacyStatus) => outcome && timeBlockOutcomes.includes(outcome) ? outcome : mapStatusToOutcome(legacyStatus);
+const normalizeTimeBlockKind = (kind) => kind && timeBlockKinds.includes(kind) ? kind : "event";
+const normalizeTimeBlockSource = (source) => source && timeBlockSources.includes(source) ? source : "manual";
+function initializePlannerDatabase() {
+  const databasePath = path.join(app.getPath("userData"), "planner.sqlite3");
+  db = new Database(databasePath);
+  db.pragma("journal_mode = WAL");
+  createSchema(db);
+  seedDefaults(db);
+  seedDefaultStatsGroups(db);
 }
-function E() {
-  if (!g)
+function getDb() {
+  if (!db) {
     throw new Error("Planner database has not been initialized");
-  return g;
+  }
+  return db;
 }
-function ne(e) {
-  e.exec(`
+function createSchema(database) {
+  database.exec(`
     CREATE TABLE IF NOT EXISTS categories (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -435,12 +478,25 @@ function ne(e) {
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
     );
   `);
-  const t = e.prepare("PRAGMA table_info(categories)").all(), r = new Set(t.map((p) => p.name));
-  r.has("default_block_kind") || e.prepare("ALTER TABLE categories ADD COLUMN default_block_kind TEXT NOT NULL DEFAULT 'event'").run(), r.has("hidden_from_calendar") || e.prepare("ALTER TABLE categories ADD COLUMN hidden_from_calendar INTEGER NOT NULL DEFAULT 0").run(), r.has("include_in_stats_by_default") || e.prepare(
-    "ALTER TABLE categories ADD COLUMN include_in_stats_by_default INTEGER NOT NULL DEFAULT 1"
-  ).run();
-  const o = e.prepare("PRAGMA table_info(tasks)").all(), n = new Set(o.map((p) => p.name));
-  e.exec("DROP TABLE IF EXISTS tasks_without_lists"), e.exec("DROP TABLE IF EXISTS tasks_without_estimates"), (n.has("list_id") || n.has("estimated_minutes")) && e.exec(`
+  const categoryColumns = database.prepare("PRAGMA table_info(categories)").all();
+  const categoryColumnNames = new Set(categoryColumns.map((column) => column.name));
+  if (!categoryColumnNames.has("default_block_kind")) {
+    database.prepare("ALTER TABLE categories ADD COLUMN default_block_kind TEXT NOT NULL DEFAULT 'event'").run();
+  }
+  if (!categoryColumnNames.has("hidden_from_calendar")) {
+    database.prepare("ALTER TABLE categories ADD COLUMN hidden_from_calendar INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!categoryColumnNames.has("include_in_stats_by_default")) {
+    database.prepare(
+      "ALTER TABLE categories ADD COLUMN include_in_stats_by_default INTEGER NOT NULL DEFAULT 1"
+    ).run();
+  }
+  const taskColumns = database.prepare("PRAGMA table_info(tasks)").all();
+  const taskColumnNames = new Set(taskColumns.map((column) => column.name));
+  database.exec("DROP TABLE IF EXISTS tasks_without_lists");
+  database.exec("DROP TABLE IF EXISTS tasks_without_estimates");
+  if (taskColumnNames.has("list_id") || taskColumnNames.has("estimated_minutes")) {
+    database.exec(`
       PRAGMA foreign_keys = OFF;
 
       CREATE TABLE tasks_without_estimates (
@@ -468,10 +524,27 @@ function ne(e) {
       ALTER TABLE tasks_without_estimates RENAME TO tasks;
 
       PRAGMA foreign_keys = ON;
-    `), e.exec("DROP TABLE IF EXISTS task_lists");
-  const i = e.prepare("PRAGMA table_info(time_blocks)").all(), l = new Set(i.map((p) => p.name));
-  l.has("status") || e.prepare("ALTER TABLE time_blocks ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'").run(), l.has("outcome") ? e.prepare(
-    `UPDATE time_blocks
+    `);
+  }
+  database.exec("DROP TABLE IF EXISTS task_lists");
+  const timeBlockColumns = database.prepare("PRAGMA table_info(time_blocks)").all();
+  const timeBlockColumnNames = new Set(timeBlockColumns.map((column) => column.name));
+  if (!timeBlockColumnNames.has("status")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'").run();
+  }
+  if (!timeBlockColumnNames.has("outcome")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN outcome TEXT NOT NULL DEFAULT 'active'").run();
+    database.prepare(
+      `UPDATE time_blocks
+         SET outcome = CASE status
+           WHEN 'skipped' THEN 'abandoned'
+           WHEN 'canceled' THEN 'abandoned'
+           ELSE 'active'
+         END`
+    ).run();
+  } else {
+    database.prepare(
+      `UPDATE time_blocks
          SET outcome = CASE status
            WHEN 'skipped' THEN 'abandoned'
            WHEN 'canceled' THEN 'abandoned'
@@ -479,37 +552,78 @@ function ne(e) {
          END
          WHERE outcome IS NULL
             OR outcome NOT IN ('active', 'abandoned')`
-  ).run() : (e.prepare("ALTER TABLE time_blocks ADD COLUMN outcome TEXT NOT NULL DEFAULT 'active'").run(), e.prepare(
-    `UPDATE time_blocks
-         SET outcome = CASE status
-           WHEN 'skipped' THEN 'abandoned'
-           WHEN 'canceled' THEN 'abandoned'
-           ELSE 'active'
-         END`
-  ).run()), e.prepare(
+    ).run();
+  }
+  database.prepare(
     `UPDATE time_blocks
        SET outcome = 'active'
        WHERE outcome IN ('scheduled', 'recorded')`
-  ).run(), l.has("kind") || e.prepare("ALTER TABLE time_blocks ADD COLUMN kind TEXT NOT NULL DEFAULT 'event'").run(), l.has("source") || e.prepare("ALTER TABLE time_blocks ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'").run(), l.has("recurrence_frequency") || e.prepare(
-    "ALTER TABLE time_blocks ADD COLUMN recurrence_frequency TEXT NOT NULL DEFAULT 'none'"
-  ).run(), l.has("is_all_day") || e.prepare("ALTER TABLE time_blocks ADD COLUMN is_all_day INTEGER NOT NULL DEFAULT 0").run(), l.has("recurrence_end_date") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_date TEXT").run(), l.has("recurrence_interval") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_interval INTEGER NOT NULL DEFAULT 1").run(), l.has("recurrence_weekdays") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_weekdays TEXT").run(), l.has("recurrence_end_mode") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_mode TEXT NOT NULL DEFAULT 'never'").run(), l.has("recurrence_count") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_count INTEGER").run(), l.has("recurrence_exceptions") || e.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT").run(), l.has("time_zone") || e.prepare("ALTER TABLE time_blocks ADD COLUMN time_zone TEXT").run();
-  const a = e.prepare("PRAGMA table_info(stats_groups)").all(), d = new Set(a.map((p) => p.name));
-  d.has("created_at") || e.prepare("ALTER TABLE stats_groups ADD COLUMN created_at TEXT NOT NULL DEFAULT ''").run(), d.has("updated_at") || e.prepare("ALTER TABLE stats_groups ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''").run(), d.has("counts_toward_active_time") || (e.prepare(
-    "ALTER TABLE stats_groups ADD COLUMN counts_toward_active_time INTEGER NOT NULL DEFAULT 1"
-  ).run(), e.prepare(
-    `UPDATE stats_groups
+  ).run();
+  if (!timeBlockColumnNames.has("kind")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN kind TEXT NOT NULL DEFAULT 'event'").run();
+  }
+  if (!timeBlockColumnNames.has("source")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_frequency")) {
+    database.prepare(
+      "ALTER TABLE time_blocks ADD COLUMN recurrence_frequency TEXT NOT NULL DEFAULT 'none'"
+    ).run();
+  }
+  if (!timeBlockColumnNames.has("is_all_day")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN is_all_day INTEGER NOT NULL DEFAULT 0").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_end_date")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_date TEXT").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_interval")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_interval INTEGER NOT NULL DEFAULT 1").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_weekdays")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_weekdays TEXT").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_end_mode")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_end_mode TEXT NOT NULL DEFAULT 'never'").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_count")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_count INTEGER").run();
+  }
+  if (!timeBlockColumnNames.has("recurrence_exceptions")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN recurrence_exceptions TEXT").run();
+  }
+  if (!timeBlockColumnNames.has("time_zone")) {
+    database.prepare("ALTER TABLE time_blocks ADD COLUMN time_zone TEXT").run();
+  }
+  const statsGroupColumns = database.prepare("PRAGMA table_info(stats_groups)").all();
+  const statsGroupColumnNames = new Set(statsGroupColumns.map((column) => column.name));
+  if (!statsGroupColumnNames.has("created_at")) {
+    database.prepare("ALTER TABLE stats_groups ADD COLUMN created_at TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!statsGroupColumnNames.has("updated_at")) {
+    database.prepare("ALTER TABLE stats_groups ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''").run();
+  }
+  if (!statsGroupColumnNames.has("counts_toward_active_time")) {
+    database.prepare(
+      "ALTER TABLE stats_groups ADD COLUMN counts_toward_active_time INTEGER NOT NULL DEFAULT 1"
+    ).run();
+    database.prepare(
+      `UPDATE stats_groups
          SET counts_toward_active_time = 0
          WHERE lower(name) IN ('sleep / meals', 'rest / recovery')`
-  ).run()), e.prepare(
+    ).run();
+  }
+  database.prepare(
     `UPDATE stats_groups
        SET created_at = CASE WHEN created_at = '' THEN datetime('now') ELSE created_at END,
            updated_at = CASE WHEN updated_at = '' THEN datetime('now') ELSE updated_at END`
   ).run();
 }
-function ae(e) {
-  if (e.prepare("SELECT COUNT(*) AS count FROM categories").get().count > 0)
+function seedDefaults(database) {
+  const categoryCount = database.prepare("SELECT COUNT(*) AS count FROM categories").get();
+  if (categoryCount.count > 0) {
     return;
-  const r = e.prepare(`
+  }
+  const insertCategory = database.prepare(`
     INSERT INTO categories (
       id, name, color, description, default_block_kind,
       hidden_from_calendar, include_in_stats_by_default
@@ -518,7 +632,8 @@ function ae(e) {
       @id, @name, @color, @description, @defaultBlockKind,
       @hiddenFromCalendar, @includeInStatsByDefault
     )
-  `), o = e.prepare(`
+  `);
+  const insertTask = database.prepare(`
     INSERT INTO tasks (
       id, title, notes, category_id, status, priority,
       due_date, planned_time_block_id
@@ -527,10 +642,12 @@ function ae(e) {
       @id, @title, @notes, @categoryId, @status, @priority,
       @dueDate, @plannedTimeBlockId
     )
-  `), n = e.prepare(`
+  `);
+  const insertSubtask = database.prepare(`
     INSERT INTO subtasks (id, task_id, title, completed)
     VALUES (@id, @taskId, @title, @completed)
-  `), i = e.prepare(`
+  `);
+  const insertTimeBlock = database.prepare(`
     INSERT INTO time_blocks (
       id, title, notes, category_id, task_id, starts_at, ends_at,
       status, outcome, kind, source, is_all_day,
@@ -546,62 +663,70 @@ function ae(e) {
       @recurrenceExceptions, @timeZone
     )
   `);
-  e.transaction(() => {
-    K.forEach(
-      (a) => r.run({
-        ...a,
-        defaultBlockKind: k(a.defaultBlockKind),
-        hiddenFromCalendar: a.hiddenFromCalendar ? 1 : 0,
-        includeInStatsByDefault: a.includeInStatsByDefault ? 1 : 0
-      })
-    ), q.forEach((a) => {
-      var d;
-      o.run({
-        ...a,
-        dueDate: a.dueDate ?? null,
-        plannedTimeBlockId: a.plannedTimeBlockId ?? null
-      }), (d = a.subtasks) == null || d.forEach(
-        (p) => n.run({
-          ...p,
-          taskId: a.id,
-          completed: p.completed ? 1 : 0
-        })
-      );
-    }), Y.forEach(
-      (a) => i.run({
-        ...a,
-        taskId: a.taskId ?? null,
-        outcome: y(a.outcome, a.status),
-        status: U(y(a.outcome, a.status)),
-        kind: k(a.kind),
-        source: f(a.source),
-        isAllDay: a.isAllDay ? 1 : 0,
-        recurrenceFrequency: a.recurrenceFrequency ?? "none",
-        recurrenceInterval: a.recurrenceInterval ?? 1,
-        recurrenceWeekdays: h(a.recurrenceWeekdays),
-        recurrenceEndMode: a.recurrenceEndMode ?? (a.recurrenceEndDate ? "on" : "never"),
-        recurrenceEndDate: a.recurrenceEndDate ?? null,
-        recurrenceCount: a.recurrenceCount ?? null,
-        recurrenceExceptions: S(a.recurrenceExceptions),
-        timeZone: a.timeZone ?? null
+  const seed = database.transaction(() => {
+    sampleCategories.forEach(
+      (category) => insertCategory.run({
+        ...category,
+        defaultBlockKind: normalizeTimeBlockKind(category.defaultBlockKind),
+        hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+        includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
       })
     );
-  })();
+    sampleTasks.forEach((task) => {
+      var _a;
+      insertTask.run({
+        ...task,
+        dueDate: task.dueDate ?? null,
+        plannedTimeBlockId: task.plannedTimeBlockId ?? null
+      });
+      (_a = task.subtasks) == null ? void 0 : _a.forEach(
+        (subtask) => insertSubtask.run({
+          ...subtask,
+          taskId: task.id,
+          completed: subtask.completed ? 1 : 0
+        })
+      );
+    });
+    sampleTimeBlocks.forEach(
+      (block) => insertTimeBlock.run({
+        ...block,
+        taskId: block.taskId ?? null,
+        outcome: normalizeTimeBlockOutcome(block.outcome, block.status),
+        status: mapOutcomeToStatus(normalizeTimeBlockOutcome(block.outcome, block.status)),
+        kind: normalizeTimeBlockKind(block.kind),
+        source: normalizeTimeBlockSource(block.source),
+        isAllDay: block.isAllDay ? 1 : 0,
+        recurrenceFrequency: block.recurrenceFrequency ?? "none",
+        recurrenceInterval: block.recurrenceInterval ?? 1,
+        recurrenceWeekdays: serializeRecurrenceWeekdays(block.recurrenceWeekdays),
+        recurrenceEndMode: block.recurrenceEndMode ?? (block.recurrenceEndDate ? "on" : "never"),
+        recurrenceEndDate: block.recurrenceEndDate ?? null,
+        recurrenceCount: block.recurrenceCount ?? null,
+        recurrenceExceptions: serializeRecurrenceExceptions(block.recurrenceExceptions),
+        timeZone: block.timeZone ?? null
+      })
+    );
+  });
+  seed();
 }
-function oe(e) {
-  var r;
-  const t = e.name.toLowerCase();
-  return ((r = ee.find(
-    (o) => o.matcher.test(t)
-  )) == null ? void 0 : r.id) ?? "stats-group-other";
+function getDefaultStatsGroupIdForCategory(category) {
+  var _a;
+  const categoryName = category.name.toLowerCase();
+  return ((_a = defaultStatsGroupMatchers.find(
+    (definition) => definition.matcher.test(categoryName)
+  )) == null ? void 0 : _a.id) ?? "stats-group-other";
 }
-function ce(e) {
-  if (e.prepare("SELECT COUNT(*) AS count FROM stats_groups").get().count > 0)
+function seedDefaultStatsGroups(database) {
+  const statsGroupCount = database.prepare("SELECT COUNT(*) AS count FROM stats_groups").get();
+  if (statsGroupCount.count > 0) {
     return;
-  e.transaction(() => b(e))();
+  }
+  const seed = database.transaction(() => insertDefaultStatsGroups(database));
+  seed();
 }
-function b(e) {
-  const t = (/* @__PURE__ */ new Date()).toISOString(), r = e.prepare(`
+function insertDefaultStatsGroups(database) {
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const insertGroup = database.prepare(`
     INSERT INTO stats_groups (
       id, name, color, sort_order, counts_toward_active_time, created_at, updated_at
     )
@@ -609,86 +734,107 @@ function b(e) {
       @id, @name, @color, @sortOrder, @countsTowardProductiveTime,
       @createdAt, @updatedAt
     )
-  `), o = e.prepare(`
+  `);
+  const insertAssignment = database.prepare(`
     INSERT OR REPLACE INTO stats_group_categories (group_id, category_id)
     VALUES (@groupId, @categoryId)
-  `), n = e.prepare("SELECT * FROM categories ORDER BY name").all();
-  Q.forEach(
-    (i) => r.run({
-      id: i.id,
-      name: i.name,
-      color: i.color,
-      sortOrder: i.sortOrder,
-      countsTowardProductiveTime: i.countsTowardProductiveTime ? 1 : 0,
-      createdAt: t,
-      updatedAt: t
+  `);
+  const categories = database.prepare("SELECT * FROM categories ORDER BY name").all();
+  defaultStatsGroups.forEach(
+    (group) => insertGroup.run({
+      id: group.id,
+      name: group.name,
+      color: group.color,
+      sortOrder: group.sortOrder,
+      countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+      createdAt: now,
+      updatedAt: now
     })
-  ), n.forEach((i) => {
-    o.run({
-      groupId: oe(i),
-      categoryId: i.id
+  );
+  categories.forEach((category) => {
+    insertAssignment.run({
+      groupId: getDefaultStatsGroupIdForCategory(category),
+      categoryId: category.id
     });
   });
 }
-function D() {
+function getPlannerSnapshot() {
   return {
-    categories: ie(),
-    statsGroups: R(),
-    tasks: C(),
-    timeBlocks: M()
+    categories: getCategories(),
+    statsGroups: getStatsGroups(),
+    tasks: getTasks(),
+    timeBlocks: getTimeBlocks()
   };
 }
-function se(e, t) {
+function normalizeStatsGroup(group, index) {
   return {
-    id: e.id || A("stats-group"),
-    name: e.name.trim() || "Untitled group",
-    color: /^#[0-9a-f]{6}$/i.test(e.color) ? e.color : "#22d3ee",
-    sortOrder: Number.isFinite(e.sortOrder) ? e.sortOrder : t,
-    countsTowardProductiveTime: e.countsTowardProductiveTime ?? !0,
-    categoryIds: [...new Set(e.categoryIds)]
+    id: group.id || createId("stats-group"),
+    name: group.name.trim() || "Untitled group",
+    color: /^#[0-9a-f]{6}$/i.test(group.color) ? group.color : "#22d3ee",
+    sortOrder: Number.isFinite(group.sortOrder) ? group.sortOrder : index,
+    countsTowardProductiveTime: group.countsTowardProductiveTime ?? true,
+    categoryIds: [...new Set(group.categoryIds)]
   };
 }
-function R() {
-  const e = E(), t = e.prepare("SELECT * FROM stats_groups ORDER BY sort_order, name").all(), r = e.prepare("SELECT * FROM stats_group_categories").all(), o = /* @__PURE__ */ new Map();
-  return r.forEach((n) => {
-    o.set(n.group_id, [
-      ...o.get(n.group_id) ?? [],
-      n.category_id
+function getStatsGroups() {
+  const database = getDb();
+  const groupRows = database.prepare("SELECT * FROM stats_groups ORDER BY sort_order, name").all();
+  const assignmentRows = database.prepare("SELECT * FROM stats_group_categories").all();
+  const categoryIdsByGroup = /* @__PURE__ */ new Map();
+  assignmentRows.forEach((row) => {
+    categoryIdsByGroup.set(row.group_id, [
+      ...categoryIdsByGroup.get(row.group_id) ?? [],
+      row.category_id
     ]);
-  }), t.map((n) => ({
-    id: n.id,
-    name: n.name,
-    color: n.color,
-    sortOrder: n.sort_order,
-    countsTowardProductiveTime: n.counts_toward_active_time !== 0,
-    categoryIds: o.get(n.id) ?? []
+  });
+  return groupRows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    sortOrder: row.sort_order,
+    countsTowardProductiveTime: row.counts_toward_active_time !== 0,
+    categoryIds: categoryIdsByGroup.get(row.id) ?? []
   }));
 }
-function de(e) {
-  const t = E(), r = R(), o = new Set(r.map((d) => d.id)), n = e.map(se), i = new Set(n.map((d) => d.id)), l = (/* @__PURE__ */ new Date()).toISOString();
-  return t.transaction(() => {
-    if (n.length === 0) {
-      t.prepare("DELETE FROM stats_group_categories").run(), t.prepare("DELETE FROM stats_groups").run(), b(t);
+function updateStatsGroups(input) {
+  const database = getDb();
+  const existingGroups = getStatsGroups();
+  const existingGroupIds = new Set(existingGroups.map((group) => group.id));
+  const normalizedGroups = input.map(normalizeStatsGroup);
+  const normalizedGroupIds = new Set(normalizedGroups.map((group) => group.id));
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const update = database.transaction(() => {
+    if (normalizedGroups.length === 0) {
+      database.prepare("DELETE FROM stats_group_categories").run();
+      database.prepare("DELETE FROM stats_groups").run();
+      insertDefaultStatsGroups(database);
       return;
     }
-    t.prepare("DELETE FROM stats_group_categories").run(), r.forEach((d) => {
-      i.has(d.id) || t.prepare("DELETE FROM stats_groups WHERE id = @id").run({ id: d.id });
-    }), n.forEach((d, p) => {
-      o.has(d.id) ? t.prepare(
-        `UPDATE stats_groups
+    database.prepare("DELETE FROM stats_group_categories").run();
+    existingGroups.forEach((group) => {
+      if (!normalizedGroupIds.has(group.id)) {
+        database.prepare("DELETE FROM stats_groups WHERE id = @id").run({ id: group.id });
+      }
+    });
+    normalizedGroups.forEach((group, index) => {
+      if (existingGroupIds.has(group.id)) {
+        database.prepare(
+          `UPDATE stats_groups
              SET name = @name,
                  color = @color,
                  sort_order = @sortOrder,
                   counts_toward_active_time = @countsTowardProductiveTime,
                  updated_at = @updatedAt
              WHERE id = @id`
-      ).run({
-        ...d,
-        sortOrder: p,
-        countsTowardProductiveTime: d.countsTowardProductiveTime ? 1 : 0,
-        updatedAt: l
-      }) : t.prepare(
-        `INSERT INTO stats_groups (
+        ).run({
+          ...group,
+          sortOrder: index,
+          countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+          updatedAt: now
+        });
+      } else {
+        database.prepare(
+          `INSERT INTO stats_groups (
               id, name, color, sort_order, counts_toward_active_time,
               created_at, updated_at
             )
@@ -696,46 +842,51 @@ function de(e) {
               @id, @name, @color, @sortOrder, @countsTowardProductiveTime,
               @createdAt, @updatedAt
             )`
-      ).run({
-        ...d,
-        sortOrder: p,
-        countsTowardProductiveTime: d.countsTowardProductiveTime ? 1 : 0,
-        createdAt: l,
-        updatedAt: l
-      }), d.categoryIds.forEach((G) => {
-        t.prepare(
+        ).run({
+          ...group,
+          sortOrder: index,
+          countsTowardProductiveTime: group.countsTowardProductiveTime ? 1 : 0,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+      group.categoryIds.forEach((categoryId) => {
+        database.prepare(
           `INSERT OR REPLACE INTO stats_group_categories (group_id, category_id)
              VALUES (@groupId, @categoryId)`
         ).run({
-          groupId: d.id,
-          categoryId: G
+          groupId: group.id,
+          categoryId
         });
       });
     });
-  })(), R();
+  });
+  update();
+  return getStatsGroups();
 }
-function ie() {
-  return E().prepare("SELECT * FROM categories ORDER BY name").all().map((t) => ({
-    id: t.id,
-    name: t.name,
-    color: t.color,
-    description: t.description,
-    defaultBlockKind: k(t.default_block_kind),
-    hiddenFromCalendar: !!t.hidden_from_calendar,
-    includeInStatsByDefault: t.include_in_stats_by_default !== 0
+function getCategories() {
+  const rows = getDb().prepare("SELECT * FROM categories ORDER BY name").all();
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    description: row.description,
+    defaultBlockKind: normalizeTimeBlockKind(row.default_block_kind),
+    hiddenFromCalendar: Boolean(row.hidden_from_calendar),
+    includeInStatsByDefault: row.include_in_stats_by_default !== 0
   }));
 }
-function ue(e) {
-  const t = {
-    id: A("cat"),
-    name: e.name,
-    color: e.color,
-    description: e.description,
-    defaultBlockKind: k(e.defaultBlockKind),
-    hiddenFromCalendar: e.hiddenFromCalendar ?? !1,
-    includeInStatsByDefault: e.includeInStatsByDefault ?? !0
+function createCategory(input) {
+  const category = {
+    id: createId("cat"),
+    name: input.name,
+    color: input.color,
+    description: input.description,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true
   };
-  return E().prepare(
+  getDb().prepare(
     `INSERT INTO categories (
         id, name, color, description, default_block_kind,
         hidden_from_calendar, include_in_stats_by_default
@@ -745,19 +896,20 @@ function ue(e) {
         @hiddenFromCalendar, @includeInStatsByDefault
       )`
   ).run({
-    ...t,
-    hiddenFromCalendar: t.hiddenFromCalendar ? 1 : 0,
-    includeInStatsByDefault: t.includeInStatsByDefault ? 1 : 0
-  }), t;
+    ...category,
+    hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+    includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
+  });
+  return category;
 }
-function le(e) {
-  const t = {
-    ...e,
-    defaultBlockKind: k(e.defaultBlockKind),
-    hiddenFromCalendar: e.hiddenFromCalendar ?? !1,
-    includeInStatsByDefault: e.includeInStatsByDefault ?? !0
+function updateCategory(input) {
+  const category = {
+    ...input,
+    defaultBlockKind: normalizeTimeBlockKind(input.defaultBlockKind),
+    hiddenFromCalendar: input.hiddenFromCalendar ?? false,
+    includeInStatsByDefault: input.includeInStatsByDefault ?? true
   };
-  return E().prepare(
+  getDb().prepare(
     `UPDATE categories
        SET name = @name,
            color = @color,
@@ -767,52 +919,62 @@ function le(e) {
            include_in_stats_by_default = @includeInStatsByDefault
        WHERE id = @id`
   ).run({
-    ...t,
-    hiddenFromCalendar: t.hiddenFromCalendar ? 1 : 0,
-    includeInStatsByDefault: t.includeInStatsByDefault ? 1 : 0
-  }), t;
+    ...category,
+    hiddenFromCalendar: category.hiddenFromCalendar ? 1 : 0,
+    includeInStatsByDefault: category.includeInStatsByDefault ? 1 : 0
+  });
+  return category;
 }
-function Ee(e) {
-  const t = E(), r = t.prepare("SELECT id FROM categories WHERE id != @categoryId ORDER BY name LIMIT 1").get({ categoryId: e });
-  if (!r)
+function deleteCategory(categoryId) {
+  const database = getDb();
+  const fallbackCategory = database.prepare("SELECT id FROM categories WHERE id != @categoryId ORDER BY name LIMIT 1").get({ categoryId });
+  if (!fallbackCategory) {
     throw new Error("Cannot delete the only category. Create another category first.");
-  return t.transaction(() => {
-    t.prepare(
+  }
+  const remove = database.transaction(() => {
+    database.prepare(
       "UPDATE tasks SET category_id = @fallbackCategoryId WHERE category_id = @categoryId"
-    ).run({ categoryId: e, fallbackCategoryId: r.id }), t.prepare(
+    ).run({ categoryId, fallbackCategoryId: fallbackCategory.id });
+    database.prepare(
       "UPDATE time_blocks SET category_id = @fallbackCategoryId WHERE category_id = @categoryId"
-    ).run({ categoryId: e, fallbackCategoryId: r.id }), t.prepare("DELETE FROM stats_group_categories WHERE category_id = @categoryId").run({ categoryId: e }), t.prepare("DELETE FROM categories WHERE id = @categoryId").run({ categoryId: e });
-  })(), e;
+    ).run({ categoryId, fallbackCategoryId: fallbackCategory.id });
+    database.prepare("DELETE FROM stats_group_categories WHERE category_id = @categoryId").run({ categoryId });
+    database.prepare("DELETE FROM categories WHERE id = @categoryId").run({ categoryId });
+  });
+  remove();
+  return categoryId;
 }
-function C() {
-  const e = E().prepare("SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, title").all(), t = E().prepare("SELECT * FROM subtasks ORDER BY title").all();
-  return e.map((r) => {
-    const o = t.filter((n) => n.task_id === r.id).map((n) => ({
-      id: n.id,
-      title: n.title,
-      completed: n.completed === 1
+function getTasks() {
+  const taskRows = getDb().prepare("SELECT * FROM tasks ORDER BY due_date IS NULL, due_date, title").all();
+  const subtaskRows = getDb().prepare("SELECT * FROM subtasks ORDER BY title").all();
+  return taskRows.map((row) => {
+    const subtasks = subtaskRows.filter((subtask) => subtask.task_id === row.id).map((subtask) => ({
+      id: subtask.id,
+      title: subtask.title,
+      completed: subtask.completed === 1
     }));
     return {
-      id: r.id,
-      title: r.title,
-      notes: r.notes,
-      categoryId: r.category_id,
-      status: r.status,
-      priority: r.priority,
-      dueDate: r.due_date ?? void 0,
-      plannedTimeBlockId: r.planned_time_block_id ?? void 0,
-      subtasks: o.length > 0 ? o : void 0
+      id: row.id,
+      title: row.title,
+      notes: row.notes,
+      categoryId: row.category_id,
+      status: row.status,
+      priority: row.priority,
+      dueDate: row.due_date ?? void 0,
+      plannedTimeBlockId: row.planned_time_block_id ?? void 0,
+      subtasks: subtasks.length > 0 ? subtasks : void 0
     };
   });
 }
-function Te(e) {
-  const t = {
-    id: A("task"),
-    ...e
-  }, r = E();
-  return r.transaction(() => {
-    var n;
-    r.prepare(`
+function createTask(input) {
+  const task = {
+    id: createId("task"),
+    ...input
+  };
+  const database = getDb();
+  const insert = database.transaction(() => {
+    var _a;
+    database.prepare(`
         INSERT INTO tasks (
           id, title, notes, category_id, status, priority,
           due_date, planned_time_block_id
@@ -822,25 +984,28 @@ function Te(e) {
           @dueDate, @plannedTimeBlockId
         )
       `).run({
-      ...t,
-      dueDate: t.dueDate ?? null,
-      plannedTimeBlockId: t.plannedTimeBlockId ?? null
-    }), (n = t.subtasks) == null || n.forEach((i) => {
-      r.prepare(
+      ...task,
+      dueDate: task.dueDate ?? null,
+      plannedTimeBlockId: task.plannedTimeBlockId ?? null
+    });
+    (_a = task.subtasks) == null ? void 0 : _a.forEach((subtask) => {
+      database.prepare(
         "INSERT INTO subtasks (id, task_id, title, completed) VALUES (@id, @taskId, @title, @completed)"
       ).run({
-        ...i,
-        taskId: t.id,
-        completed: i.completed ? 1 : 0
+        ...subtask,
+        taskId: task.id,
+        completed: subtask.completed ? 1 : 0
       });
     });
-  })(), t;
+  });
+  insert();
+  return task;
 }
-function pe(e) {
-  const t = E();
-  return t.transaction(() => {
-    var o;
-    t.prepare(`
+function updateTask(input) {
+  const database = getDb();
+  const update = database.transaction(() => {
+    var _a;
+    database.prepare(`
         UPDATE tasks
         SET title = @title,
             notes = @notes,
@@ -851,78 +1016,88 @@ function pe(e) {
             planned_time_block_id = @plannedTimeBlockId
         WHERE id = @id
       `).run({
-      ...e,
-      dueDate: e.dueDate ?? null,
-      plannedTimeBlockId: e.plannedTimeBlockId ?? null
-    }), t.prepare("DELETE FROM subtasks WHERE task_id = @taskId").run({ taskId: e.id }), (o = e.subtasks) == null || o.forEach((n) => {
-      t.prepare(
+      ...input,
+      dueDate: input.dueDate ?? null,
+      plannedTimeBlockId: input.plannedTimeBlockId ?? null
+    });
+    database.prepare("DELETE FROM subtasks WHERE task_id = @taskId").run({ taskId: input.id });
+    (_a = input.subtasks) == null ? void 0 : _a.forEach((subtask) => {
+      database.prepare(
         "INSERT INTO subtasks (id, task_id, title, completed) VALUES (@id, @taskId, @title, @completed)"
       ).run({
-        ...n,
-        taskId: e.id,
-        completed: n.completed ? 1 : 0
+        ...subtask,
+        taskId: input.id,
+        completed: subtask.completed ? 1 : 0
       });
     });
-  })(), C().find((o) => o.id === e.id) ?? e;
+  });
+  update();
+  return getTasks().find((task) => task.id === input.id) ?? input;
 }
-function me(e) {
-  const t = E();
-  return t.transaction(() => {
-    t.prepare("UPDATE time_blocks SET task_id = NULL WHERE task_id = @taskId").run({ taskId: e }), t.prepare("DELETE FROM subtasks WHERE task_id = @taskId").run({ taskId: e }), t.prepare("DELETE FROM tasks WHERE id = @taskId").run({ taskId: e });
-  })(), e;
+function deleteTask(taskId) {
+  const database = getDb();
+  const remove = database.transaction(() => {
+    database.prepare("UPDATE time_blocks SET task_id = NULL WHERE task_id = @taskId").run({ taskId });
+    database.prepare("DELETE FROM subtasks WHERE task_id = @taskId").run({ taskId });
+    database.prepare("DELETE FROM tasks WHERE id = @taskId").run({ taskId });
+  });
+  remove();
+  return taskId;
 }
-function _e(e, t) {
-  return E().prepare("UPDATE tasks SET status = @status WHERE id = @taskId").run({ taskId: e, status: t }), C().find((r) => r.id === e);
+function updateTaskStatus(taskId, status) {
+  getDb().prepare("UPDATE tasks SET status = @status WHERE id = @taskId").run({ taskId, status });
+  return getTasks().find((task) => task.id === taskId);
 }
-function M() {
-  return E().prepare("SELECT * FROM time_blocks ORDER BY starts_at").all().map((t) => ({
-    id: t.id,
-    title: t.title,
-    notes: t.notes,
-    categoryId: t.category_id,
-    taskId: t.task_id ?? void 0,
-    startsAt: t.starts_at,
-    endsAt: t.ends_at,
-    outcome: y(t.outcome, t.status),
-    kind: k(t.kind),
-    source: f(t.source),
-    isAllDay: !!t.is_all_day,
-    recurrenceFrequency: t.recurrence_frequency ?? "none",
-    recurrenceInterval: t.recurrence_interval ?? 1,
-    recurrenceWeekdays: V(t.recurrence_weekdays),
-    recurrenceEndMode: Z(
-      t.recurrence_end_mode,
-      t.recurrence_end_date
+function getTimeBlocks() {
+  const rows = getDb().prepare("SELECT * FROM time_blocks ORDER BY starts_at").all();
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    notes: row.notes,
+    categoryId: row.category_id,
+    taskId: row.task_id ?? void 0,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    outcome: normalizeTimeBlockOutcome(row.outcome, row.status),
+    kind: normalizeTimeBlockKind(row.kind),
+    source: normalizeTimeBlockSource(row.source),
+    isAllDay: Boolean(row.is_all_day),
+    recurrenceFrequency: row.recurrence_frequency ?? "none",
+    recurrenceInterval: row.recurrence_interval ?? 1,
+    recurrenceWeekdays: parseRecurrenceWeekdays(row.recurrence_weekdays),
+    recurrenceEndMode: normalizeRecurrenceEndMode(
+      row.recurrence_end_mode,
+      row.recurrence_end_date
     ),
-    recurrenceEndDate: t.recurrence_end_date ?? void 0,
-    recurrenceCount: t.recurrence_count ?? void 0,
-    recurrenceExceptions: z(t.recurrence_exceptions),
-    timeZone: t.time_zone ?? void 0
+    recurrenceEndDate: row.recurrence_end_date ?? void 0,
+    recurrenceCount: row.recurrence_count ?? void 0,
+    recurrenceExceptions: parseRecurrenceExceptions(row.recurrence_exceptions),
+    timeZone: row.time_zone ?? void 0
   }));
 }
-function O(e) {
-  const t = {
-    id: e.id ?? A("block"),
-    title: e.title,
-    notes: e.notes,
-    categoryId: e.categoryId,
-    taskId: e.taskId,
-    startsAt: e.startsAt,
-    endsAt: e.endsAt,
-    outcome: y(e.outcome),
-    kind: k(e.kind),
-    source: f(e.source),
-    isAllDay: e.isAllDay,
-    recurrenceFrequency: e.recurrenceFrequency ?? "none",
-    recurrenceInterval: e.recurrenceInterval ?? 1,
-    recurrenceWeekdays: e.recurrenceWeekdays,
-    recurrenceEndMode: e.recurrenceEndMode ?? (e.recurrenceEndDate ? "on" : "never"),
-    recurrenceEndDate: e.recurrenceEndDate,
-    recurrenceCount: e.recurrenceCount,
-    recurrenceExceptions: e.recurrenceExceptions,
-    timeZone: e.timeZone
+function createTimeBlock(input) {
+  const timeBlock = {
+    id: input.id ?? createId("block"),
+    title: input.title,
+    notes: input.notes,
+    categoryId: input.categoryId,
+    taskId: input.taskId,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    outcome: normalizeTimeBlockOutcome(input.outcome),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+    isAllDay: input.isAllDay,
+    recurrenceFrequency: input.recurrenceFrequency ?? "none",
+    recurrenceInterval: input.recurrenceInterval ?? 1,
+    recurrenceWeekdays: input.recurrenceWeekdays,
+    recurrenceEndMode: input.recurrenceEndMode ?? (input.recurrenceEndDate ? "on" : "never"),
+    recurrenceEndDate: input.recurrenceEndDate,
+    recurrenceCount: input.recurrenceCount,
+    recurrenceExceptions: input.recurrenceExceptions,
+    timeZone: input.timeZone
   };
-  return E().prepare(`
+  getDb().prepare(`
       INSERT INTO time_blocks (
         id, title, notes, category_id, task_id, starts_at, ends_at,
         status, outcome, kind, source, is_all_day,
@@ -938,22 +1113,23 @@ function O(e) {
         @recurrenceExceptions, @timeZone
       )
     `).run({
-    ...t,
-    taskId: t.taskId ?? null,
-    status: U(t.outcome),
-    isAllDay: t.isAllDay ? 1 : 0,
-    recurrenceFrequency: t.recurrenceFrequency ?? "none",
-    recurrenceInterval: t.recurrenceInterval ?? 1,
-    recurrenceWeekdays: h(t.recurrenceWeekdays),
-    recurrenceEndMode: t.recurrenceEndMode ?? "never",
-    recurrenceEndDate: t.recurrenceEndDate ?? null,
-    recurrenceCount: t.recurrenceCount ?? null,
-    recurrenceExceptions: S(t.recurrenceExceptions),
-    timeZone: t.timeZone ?? null
-  }), t;
+    ...timeBlock,
+    taskId: timeBlock.taskId ?? null,
+    status: mapOutcomeToStatus(timeBlock.outcome),
+    isAllDay: timeBlock.isAllDay ? 1 : 0,
+    recurrenceFrequency: timeBlock.recurrenceFrequency ?? "none",
+    recurrenceInterval: timeBlock.recurrenceInterval ?? 1,
+    recurrenceWeekdays: serializeRecurrenceWeekdays(timeBlock.recurrenceWeekdays),
+    recurrenceEndMode: timeBlock.recurrenceEndMode ?? "never",
+    recurrenceEndDate: timeBlock.recurrenceEndDate ?? null,
+    recurrenceCount: timeBlock.recurrenceCount ?? null,
+    recurrenceExceptions: serializeRecurrenceExceptions(timeBlock.recurrenceExceptions),
+    timeZone: timeBlock.timeZone ?? null
+  });
+  return timeBlock;
 }
-function I(e) {
-  return E().prepare(`
+function updateTimeBlock(input) {
+  getDb().prepare(`
       UPDATE time_blocks
       SET title = @title,
           notes = @notes,
@@ -976,54 +1152,58 @@ function I(e) {
           time_zone = @timeZone
       WHERE id = @id
     `).run({
-    ...e,
-    taskId: e.taskId ?? null,
-    outcome: y(e.outcome, e.status),
-    status: U(y(e.outcome, e.status)),
-    kind: k(e.kind),
-    source: f(e.source),
-    isAllDay: e.isAllDay ? 1 : 0,
-    recurrenceFrequency: e.recurrenceFrequency ?? "none",
-    recurrenceInterval: e.recurrenceInterval ?? 1,
-    recurrenceWeekdays: h(e.recurrenceWeekdays),
-    recurrenceEndMode: e.recurrenceEndMode ?? "never",
-    recurrenceEndDate: e.recurrenceEndDate ?? null,
-    recurrenceCount: e.recurrenceCount ?? null,
-    recurrenceExceptions: S(e.recurrenceExceptions),
-    timeZone: e.timeZone ?? null
-  }), {
-    ...e,
-    outcome: y(e.outcome, e.status),
-    kind: k(e.kind),
-    source: f(e.source)
+    ...input,
+    taskId: input.taskId ?? null,
+    outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+    status: mapOutcomeToStatus(normalizeTimeBlockOutcome(input.outcome, input.status)),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source),
+    isAllDay: input.isAllDay ? 1 : 0,
+    recurrenceFrequency: input.recurrenceFrequency ?? "none",
+    recurrenceInterval: input.recurrenceInterval ?? 1,
+    recurrenceWeekdays: serializeRecurrenceWeekdays(input.recurrenceWeekdays),
+    recurrenceEndMode: input.recurrenceEndMode ?? "never",
+    recurrenceEndDate: input.recurrenceEndDate ?? null,
+    recurrenceCount: input.recurrenceCount ?? null,
+    recurrenceExceptions: serializeRecurrenceExceptions(input.recurrenceExceptions),
+    timeZone: input.timeZone ?? null
+  });
+  return {
+    ...input,
+    outcome: normalizeTimeBlockOutcome(input.outcome, input.status),
+    kind: normalizeTimeBlockKind(input.kind),
+    source: normalizeTimeBlockSource(input.source)
   };
 }
-const F = (e, t) => new Date(new Date(e).getTime() + t).toISOString(), B = (e, t, r) => {
-  const o = new Date(r.startsAt).getTime() - new Date(t.startsAt).getTime(), n = new Date(r.endsAt).getTime() - new Date(t.endsAt).getTime();
+const addMs = (date, deltaMs) => new Date(new Date(date).getTime() + deltaMs).toISOString();
+const getSeriesUpdate = (seriesBlock, occurrence, updatedBlock) => {
+  const startDelta = new Date(updatedBlock.startsAt).getTime() - new Date(occurrence.startsAt).getTime();
+  const endDelta = new Date(updatedBlock.endsAt).getTime() - new Date(occurrence.endsAt).getTime();
   return {
-    ...e,
-    title: r.title,
-    notes: r.notes,
-    categoryId: r.categoryId,
-    taskId: r.taskId,
-    startsAt: F(e.startsAt, o),
-    endsAt: F(e.endsAt, n),
-    outcome: r.outcome,
-    kind: r.kind,
-    source: r.source,
-    isAllDay: r.isAllDay,
-    recurrenceFrequency: r.recurrenceFrequency ?? e.recurrenceFrequency,
-    recurrenceInterval: r.recurrenceInterval ?? e.recurrenceInterval,
-    recurrenceWeekdays: r.recurrenceWeekdays ?? e.recurrenceWeekdays,
-    recurrenceEndMode: r.recurrenceEndMode ?? e.recurrenceEndMode,
-    recurrenceEndDate: r.recurrenceEndDate,
-    recurrenceCount: r.recurrenceCount,
-    recurrenceExceptions: e.recurrenceExceptions,
-    timeZone: r.timeZone ?? e.timeZone
+    ...seriesBlock,
+    title: updatedBlock.title,
+    notes: updatedBlock.notes,
+    categoryId: updatedBlock.categoryId,
+    taskId: updatedBlock.taskId,
+    startsAt: addMs(seriesBlock.startsAt, startDelta),
+    endsAt: addMs(seriesBlock.endsAt, endDelta),
+    outcome: updatedBlock.outcome,
+    kind: updatedBlock.kind,
+    source: updatedBlock.source,
+    isAllDay: updatedBlock.isAllDay,
+    recurrenceFrequency: updatedBlock.recurrenceFrequency ?? seriesBlock.recurrenceFrequency,
+    recurrenceInterval: updatedBlock.recurrenceInterval ?? seriesBlock.recurrenceInterval,
+    recurrenceWeekdays: updatedBlock.recurrenceWeekdays ?? seriesBlock.recurrenceWeekdays,
+    recurrenceEndMode: updatedBlock.recurrenceEndMode ?? seriesBlock.recurrenceEndMode,
+    recurrenceEndDate: updatedBlock.recurrenceEndDate,
+    recurrenceCount: updatedBlock.recurrenceCount,
+    recurrenceExceptions: seriesBlock.recurrenceExceptions,
+    timeZone: updatedBlock.timeZone ?? seriesBlock.timeZone
   };
-}, ke = (e) => ({
-  ...e,
-  id: A("block"),
+};
+const getSingleOccurrenceBlock = (updatedBlock) => ({
+  ...updatedBlock,
+  id: createId("block"),
   recurrenceFrequency: "none",
   recurrenceInterval: void 0,
   recurrenceWeekdays: void 0,
@@ -1032,109 +1212,150 @@ const F = (e, t) => new Date(new Date(e).getTime() + t).toISOString(), B = (e, t
   recurrenceCount: void 0,
   recurrenceExceptions: void 0,
   recurringTimeBlockId: void 0
-}), Le = (e) => ({
-  ...e,
-  id: A("block"),
+});
+const getFutureSeriesBlock = (updatedBlock) => ({
+  ...updatedBlock,
+  id: createId("block"),
   recurringTimeBlockId: void 0,
   recurrenceExceptions: void 0
-}), ge = (e, t) => ({
-  ...e,
+});
+const getTruncatedSeriesBlock = (seriesBlock, occurrence) => ({
+  ...seriesBlock,
   recurrenceEndMode: "on",
   recurrenceEndDate: new Date(
-    new Date(t.startsAt).getTime() - 1e3
+    new Date(occurrence.startsAt).getTime() - 1e3
   ).toISOString(),
   recurrenceCount: void 0
 });
-function ye(e) {
-  const t = e.occurrence.recurringTimeBlockId ?? e.occurrence.id, r = M().find((i) => i.id === t);
-  if (!r)
+function updateRecurringTimeBlock(input) {
+  const seriesId = input.occurrence.recurringTimeBlockId ?? input.occurrence.id;
+  const seriesBlock = getTimeBlocks().find((block) => block.id === seriesId);
+  if (!seriesBlock) {
     throw new Error("Recurring series was not found");
-  return e.scope === "all" ? (I(B(r, e.occurrence, e.updatedBlock)), D()) : (E().transaction(() => {
-    if (e.scope === "this") {
-      I({
-        ...r,
+  }
+  if (input.scope === "all") {
+    updateTimeBlock(getSeriesUpdate(seriesBlock, input.occurrence, input.updatedBlock));
+    return getPlannerSnapshot();
+  }
+  const database = getDb();
+  const update = database.transaction(() => {
+    if (input.scope === "this") {
+      updateTimeBlock({
+        ...seriesBlock,
         recurrenceExceptions: [
-          ...r.recurrenceExceptions ?? [],
-          e.occurrence.startsAt
+          ...seriesBlock.recurrenceExceptions ?? [],
+          input.occurrence.startsAt
         ]
-      }), O(ke(e.updatedBlock));
+      });
+      createTimeBlock(getSingleOccurrenceBlock(input.updatedBlock));
       return;
     }
-    if (new Date(e.occurrence.startsAt).getTime() <= new Date(r.startsAt).getTime()) {
-      I(B(r, e.occurrence, e.updatedBlock));
+    if (new Date(input.occurrence.startsAt).getTime() <= new Date(seriesBlock.startsAt).getTime()) {
+      updateTimeBlock(getSeriesUpdate(seriesBlock, input.occurrence, input.updatedBlock));
       return;
     }
-    I(ge(r, e.occurrence)), O(Le(e.updatedBlock));
-  })(), D());
+    updateTimeBlock(getTruncatedSeriesBlock(seriesBlock, input.occurrence));
+    createTimeBlock(getFutureSeriesBlock(input.updatedBlock));
+  });
+  update();
+  return getPlannerSnapshot();
 }
-function Ae(e) {
-  return E().prepare("DELETE FROM time_blocks WHERE id = @timeBlockId").run({ timeBlockId: e }), e;
+function deleteTimeBlock(timeBlockId) {
+  getDb().prepare("DELETE FROM time_blocks WHERE id = @timeBlockId").run({ timeBlockId });
+  return timeBlockId;
 }
-function Ie() {
-  m.handle("planner:getSnapshot", () => D()), m.handle(
+function registerPlannerIpcHandlers() {
+  ipcMain.handle("planner:getSnapshot", () => getPlannerSnapshot());
+  ipcMain.handle(
     "planner:createCategory",
-    (e, t) => ue(t)
-  ), m.handle(
+    (_event, input) => createCategory(input)
+  );
+  ipcMain.handle(
     "planner:updateCategory",
-    (e, t) => le(t)
-  ), m.handle(
+    (_event, input) => updateCategory(input)
+  );
+  ipcMain.handle(
     "planner:deleteCategory",
-    (e, t) => Ee(t)
-  ), m.handle(
+    (_event, categoryId) => deleteCategory(categoryId)
+  );
+  ipcMain.handle(
     "planner:updateStatsGroups",
-    (e, t) => de(t)
-  ), m.handle(
+    (_event, input) => updateStatsGroups(input)
+  );
+  ipcMain.handle(
     "planner:createTask",
-    (e, t) => Te(t)
-  ), m.handle(
+    (_event, input) => createTask(input)
+  );
+  ipcMain.handle(
     "planner:updateTask",
-    (e, t) => pe(t)
-  ), m.handle(
+    (_event, input) => updateTask(input)
+  );
+  ipcMain.handle(
     "planner:deleteTask",
-    (e, t) => me(t)
-  ), m.handle(
+    (_event, taskId) => deleteTask(taskId)
+  );
+  ipcMain.handle(
     "planner:updateTaskStatus",
-    (e, t, r) => _e(t, r)
-  ), m.handle(
+    (_event, taskId, status) => updateTaskStatus(taskId, status)
+  );
+  ipcMain.handle(
     "planner:createTimeBlock",
-    (e, t) => O(t)
-  ), m.handle(
+    (_event, input) => createTimeBlock(input)
+  );
+  ipcMain.handle(
     "planner:updateTimeBlock",
-    (e, t) => I(t)
-  ), m.handle(
+    (_event, input) => updateTimeBlock(input)
+  );
+  ipcMain.handle(
     "planner:updateRecurringTimeBlock",
-    (e, t) => ye(t)
-  ), m.handle(
+    (_event, input) => updateRecurringTimeBlock(input)
+  );
+  ipcMain.handle(
     "planner:deleteTimeBlock",
-    (e, t) => Ae(t)
+    (_event, timeBlockId) => deleteTimeBlock(timeBlockId)
   );
 }
-const P = _.dirname(x(import.meta.url));
-process.env.APP_ROOT = _.join(P, "..");
-const v = process.env.VITE_DEV_SERVER_URL, Oe = _.join(process.env.APP_ROOT, "dist-electron"), X = _.join(process.env.APP_ROOT, "dist");
-process.env.VITE_PUBLIC = v ? _.join(process.env.APP_ROOT, "public") : X;
-let L;
-function W() {
-  L = new w({
-    icon: _.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
+const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
+process.env.APP_ROOT = path.join(__dirname$1, "..");
+const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
+const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
+process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
+let win;
+function createWindow() {
+  win = new BrowserWindow({
+    icon: path.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
     webPreferences: {
-      preload: _.join(P, "preload.mjs")
+      preload: path.join(__dirname$1, "preload.mjs")
     }
-  }), L.webContents.on("did-finish-load", () => {
-    L == null || L.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-  }), v ? L.loadURL(v) : L.loadFile(_.join(X, "index.html"));
+  });
+  win.webContents.on("did-finish-load", () => {
+    win == null ? void 0 : win.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
+  });
+  if (VITE_DEV_SERVER_URL) {
+    win.loadURL(VITE_DEV_SERVER_URL);
+  } else {
+    win.loadFile(path.join(RENDERER_DIST, "index.html"));
+  }
 }
-N.on("window-all-closed", () => {
-  process.platform !== "darwin" && (N.quit(), L = null);
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+    win = null;
+  }
 });
-N.on("activate", () => {
-  w.getAllWindows().length === 0 && W();
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
 });
-N.whenReady().then(() => {
-  re(), Ie(), W();
+app.whenReady().then(() => {
+  initializePlannerDatabase();
+  registerPlannerIpcHandlers();
+  createWindow();
 });
 export {
-  Oe as MAIN_DIST,
-  X as RENDERER_DIST,
-  v as VITE_DEV_SERVER_URL
+  MAIN_DIST,
+  RENDERER_DIST,
+  VITE_DEV_SERVER_URL
 };
