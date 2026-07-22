@@ -3658,6 +3658,11 @@
   grid-column: 1 / -1;
 }
 
+.year-category-line-card {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .year-monthly-productive-chart .stats-card-header {
   margin-bottom: 8px;
 }
@@ -3714,6 +3719,93 @@
 
 .year-monthly-productive-chart .stacked-chart-legend {
   margin-top: 8px;
+}
+
+.category-line-scroll {
+  height: 260px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
+
+.category-line-chart {
+  min-width: 100%;
+  height: 100%;
+}
+
+.category-line-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.category-line-axis-row line {
+  stroke: var(--color-border-muted);
+  stroke-width: 1;
+}
+
+.category-line-axis-row text,
+.category-line-axis-label {
+  fill: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.category-line-axis-row text {
+  text-anchor: end;
+}
+
+.category-line-path {
+  fill: none;
+  stroke-linecap: butt;
+  stroke-linejoin: miter;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.1));
+}
+
+.category-line-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.category-line-footer .stacked-chart-legend {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.category-line-mode-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.category-line-mode-toggle button {
+  border: 1px solid var(--color-border-muted);
+  border-radius: 2px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.category-line-mode-toggle button:hover,
+.category-line-mode-toggle button.active,
+.category-line-mode-toggle button[aria-pressed="true"] {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+}
+
+.category-line-mode-toggle button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 .year-summary-panel {

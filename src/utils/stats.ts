@@ -64,6 +64,17 @@ export type DailyGroupHoursDatum = DailyHoursDatum & {
   segments: DailyGroupHoursSegment[];
 };
 
+export type DailyCategoryHoursSegment = {
+  categoryId: string | null;
+  categoryName: string;
+  color: string;
+  hours: number;
+};
+
+export type DailyCategoryHoursDatum = DailyHoursDatum & {
+  segments: DailyCategoryHoursSegment[];
+};
+
 export type TaskStatusStats = {
   notStarted: number;
   inProgress: number;
@@ -1125,6 +1136,81 @@ export function calculateDailyStatsGroupHours(
         groupName: group.name,
         color: group.color,
         hours: (minutesByGroup.get(group.id) ?? 0) / 60,
+      }))
+      .filter((segment) => segment.hours > 0);
+    const hours = segments.reduce((total, segment) => total + segment.hours, 0);
+
+    return {
+      date: dayStart.toISOString(),
+      label: dayCount > 31
+        ? shortMonthFormatter.format(dayStart)
+        : dayLabelFormatter.format(dayStart),
+      hours,
+      segments,
+    };
+  });
+}
+
+export function calculateDailyCategoryHours(
+  timeBlocks: TimeBlock[],
+  start: Date,
+  end: Date,
+  categories: Category[],
+  timeMode: StatsTimeMode = "active",
+  timeZone?: string,
+): DailyCategoryHoursDatum[] {
+  const selectedBlocks = getTimeBlocksForTimeMode(timeBlocks, timeMode).filter(
+    (block) => block.outcome === "active" && !isAllDayBlock(block),
+  );
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const hasUncategorizedBlocks = selectedBlocks.some(
+    (block) => !categoryById.has(block.categoryId),
+  );
+  const categoryDefinitions: DailyCategoryHoursSegment[] = [
+    ...categories.map((category) => ({
+      categoryId: category.id,
+      categoryName: category.name,
+      color: getCategoryColorValues(category.color).accent,
+      hours: 0,
+    })),
+    ...(hasUncategorizedBlocks
+      ? [
+          {
+            categoryId: null,
+            categoryName: "Uncategorized",
+            color: getCategoryColorValues(undefined).accent,
+            hours: 0,
+          },
+        ]
+      : []),
+  ];
+  const dayCount = getCalendarDayCount(start, end);
+
+  return Array.from({ length: dayCount }, (_, index) => {
+    const dayStart = addCalendarDays(start, index);
+    const dayEnd = addCalendarDays(dayStart, 1);
+    const dayStartMs = getBoundaryInstant(dayStart, timeZone).getTime();
+    const dayEndMs = getBoundaryInstant(dayEnd, timeZone).getTime();
+    const minutesByCategory = new Map<string | null, number>();
+
+    selectedBlocks.forEach((block) => {
+      const minutes = getOverlappingMinutesForInstants(block, dayStartMs, dayEndMs);
+
+      if (minutes <= 0) {
+        return;
+      }
+
+      const categoryId = categoryById.has(block.categoryId) ? block.categoryId : null;
+      minutesByCategory.set(
+        categoryId,
+        (minutesByCategory.get(categoryId) ?? 0) + minutes,
+      );
+    });
+
+    const segments = categoryDefinitions
+      .map((category) => ({
+        ...category,
+        hours: (minutesByCategory.get(category.categoryId) ?? 0) / 60,
       }))
       .filter((segment) => segment.hours > 0);
     const hours = segments.reduce((total, segment) => total + segment.hours, 0);

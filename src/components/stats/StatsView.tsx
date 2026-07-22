@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { StatsFilters, WeekStartDay } from "../../types/app";
 import type { Category, StatsGroup, Task, TimeBlock } from "../../types/domain";
 import { addCalendarDays } from "../../utils/calendar";
+import CategoryDailyLineChart from "./CategoryDailyLineChart";
 import CategoryHoursChart from "./CategoryHoursChart";
 import DailyPlannedHoursChart from "./DailyPlannedHoursChart";
 import HourOfDayChart from "./HourOfDayChart";
@@ -17,6 +18,7 @@ import YearSummaryPanel from "./YearSummaryPanel";
 import {
   buildYearHeatmapData,
   calculateCategoryHours,
+  calculateDailyCategoryHours,
   calculateDailySleepHours,
   calculateDailyPlannedHours,
   calculateDailyStatsGroupHours,
@@ -362,6 +364,35 @@ function StatsView({
           )
         : [],
     [categories, isYearRange, range.start, statsGroups, timeZone, trackedActiveBlocks],
+  );
+  const yearDailyCategoryHours = useMemo(
+    () =>
+      isYearRange
+        ? calculateDailyCategoryHours(
+            trackedActiveBlocks,
+            range.start,
+            range.end,
+            categories,
+            "active",
+            timeZone,
+          )
+        : [],
+    [categories, isYearRange, range.end, range.start, timeZone, trackedActiveBlocks],
+  );
+  const yearDailyStatsGroupHours = useMemo(
+    () =>
+      isYearRange
+        ? calculateDailyStatsGroupHours(
+            trackedActiveBlocks,
+            range.start,
+            range.end,
+            categories,
+            statsGroups,
+            "active",
+            timeZone,
+          )
+        : [],
+    [categories, isYearRange, range.end, range.start, statsGroups, timeZone, trackedActiveBlocks],
   );
   const weekDailyProductiveHoursData = useMemo(
     () =>
@@ -1095,6 +1126,13 @@ function StatsView({
           kicker="Monthly trend"
           showInsights={false}
           title={dailyChartTitle}
+        />
+        <CategoryDailyLineChart
+          categories={categories}
+          categoryData={yearDailyCategoryHours}
+          emptyMessage="No active tracked category time for this year."
+          statsGroupData={yearDailyStatsGroupHours}
+          statsGroups={statsGroups}
         />
         <PressureLevelChart
           ariaLabel="Year pressure index by day"
