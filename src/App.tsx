@@ -182,6 +182,7 @@ function App() {
     useState<PendingRecurringUpdate>();
   const [pendingRecurringDelete, setPendingRecurringDelete] =
     useState<PendingRecurringDelete>();
+  const [copiedTimeBlock, setCopiedTimeBlock] = useState<TimeBlock>();
   const {
     activeResizeSide,
     constraints: resizeConstraints,
@@ -341,6 +342,17 @@ function App() {
     }
 
     setSelectedTaskId(undefined);
+  };
+
+  const handleCopySelectedTimeBlock = () => {
+    const selectedBlock = selectedBlockId
+      ? calendarTimeBlocks.find((block) => block.id === selectedBlockId)
+      : undefined;
+    if (!selectedBlock) {
+      return;
+    }
+
+    setCopiedTimeBlock(selectedBlock);
   };
 
   const handleUpdateSettings = (nextSettings: AppSettings) => {
@@ -511,6 +523,40 @@ function App() {
     setTimeBlocks((currentBlocks) => [...currentBlocks, createdBlock]);
     setSelectedBlockId(createdBlock.id);
     setSelectedBlockIds([createdBlock.id]);
+  };
+
+  const handlePasteCopiedTimeBlock = async () => {
+    if (!copiedTimeBlock) {
+      return;
+    }
+
+    const categoryExists = categories.some(
+      (category) => category.id === copiedTimeBlock.categoryId,
+    );
+    if (!categoryExists) {
+      return;
+    }
+
+    const linkedTaskExists =
+      !copiedTimeBlock.taskId ||
+      tasks.some((task) => task.id === copiedTimeBlock.taskId);
+    const pastedBlock: CreateTimeBlockInput = {
+      title: copiedTimeBlock.title,
+      notes: copiedTimeBlock.notes,
+      categoryId: copiedTimeBlock.categoryId,
+      taskId: linkedTaskExists ? copiedTimeBlock.taskId : undefined,
+      startsAt: copiedTimeBlock.startsAt,
+      endsAt: copiedTimeBlock.endsAt,
+      outcome: copiedTimeBlock.outcome,
+      kind: copiedTimeBlock.kind,
+      source: copiedTimeBlock.source,
+      isAllDay: copiedTimeBlock.isAllDay,
+      recurrenceFrequency: "none",
+      recurrenceEndMode: "never",
+      timeZone: copiedTimeBlock.timeZone,
+    };
+
+    await handleCreateTimeBlock(pastedBlock);
   };
 
   const handleUpdateTimeBlock = async (timeBlock: TimeBlock) => {
@@ -724,6 +770,8 @@ function App() {
         return;
       }
 
+      const key = event.key.toLowerCase();
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setIsCommandPaletteOpen(true);
@@ -761,6 +809,32 @@ function App() {
 
       if (
         activeItem === "calendar" &&
+        (event.ctrlKey || event.metaKey) &&
+        key === "c" &&
+        selectedBlockId &&
+        !pendingRecurringUpdate &&
+        !pendingRecurringDelete
+      ) {
+        event.preventDefault();
+        handleCopySelectedTimeBlock();
+        return;
+      }
+
+      if (
+        activeItem === "calendar" &&
+        (event.ctrlKey || event.metaKey) &&
+        key === "v" &&
+        copiedTimeBlock &&
+        !pendingRecurringUpdate &&
+        !pendingRecurringDelete
+      ) {
+        event.preventDefault();
+        void handlePasteCopiedTimeBlock();
+        return;
+      }
+
+      if (
+        activeItem === "calendar" &&
         event.key === "Delete" &&
         !pendingRecurringUpdate &&
         !pendingRecurringDelete
@@ -770,7 +844,6 @@ function App() {
         return;
       }
 
-      const key = event.key.toLowerCase();
       if (isAwaitingGoKey) {
         const navMap: Partial<Record<string, NavItemId>> = {
           c: "calendar",
